@@ -1,22 +1,46 @@
+# Python
 __pycache__/
 *.py[cod]
 *$py.class
 *.so
 .Python
-.env
-.venv/
-venv/
-env/
 *.egg-info/
 dist/
 build/
+
+# Environment
+.env
+.env.local
+.venv/
+venv/
+env/
+ENV/
+
+# Testing
 .pytest_cache/
 .coverage
 htmlcov/
 .mypy_cache/
 .ruff_cache/
-uploads/
+
+# Database
 *.db
+*.sqlite
+*.sqlite3
+
+# File uploads
+uploads/
+
+# IDE
 .DS_Store
 .idea/
 .vscode/
+*.swp
+*.swo
+*~
+
+# Streamlit (frontend)
+.streamlit/
+
+# Logs
+*.log
