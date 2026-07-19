@@ -86,7 +86,15 @@ class InvitationService:
         if invitation.status != InvitationStatus.PENDING:
             raise BadRequestError("Invitation is no longer valid")
 
-        if invitation.expires_at < datetime.now(UTC):
+        # Handle timezone-aware comparison
+        now = datetime.now(UTC)
+        if invitation.expires_at.tzinfo is None:
+            # If expires_at is naive, treat it as UTC
+            expires_utc = invitation.expires_at.replace(tzinfo=UTC)
+        else:
+            expires_utc = invitation.expires_at
+        
+        if expires_utc < now:
             raise BadRequestError("Invitation has expired")
 
         if invitation.email.lower() != user_email.lower():

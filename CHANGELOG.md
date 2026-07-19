@@ -5,6 +5,35 @@ All notable changes to AI Workspace SaaS will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.0] - 2026-07-14
+
+### Added
+- Organization member management endpoints
+- List organization members with email and role
+- Change member role (promote/demote admin)
+- Remove member from organization
+- Transfer organization ownership
+- Role-based permission enforcement for member management
+- Member management UI in Streamlit (Members page)
+- API client methods for member management
+- Comprehensive test coverage for member management
+- PATCH method support in API client
+- Member list response schema with user details
+- Role change request/response schemas
+- Member remove response schema
+- Ownership transfer request/response schemas
+
+### Changed
+- Updated memberships router with new endpoints
+- Enhanced memberships repository with list, update, delete methods
+- Extended memberships service with member management logic
+- Updated frontend navigation to include Members page
+- Updated README with member management API documentation
+- Updated authorization documentation with member management rules
+
+### Fixed
+- N/A
+
 ## [1.2.0] - 2026-07-13
 
 ### Added

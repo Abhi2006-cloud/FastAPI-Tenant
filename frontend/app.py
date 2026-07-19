@@ -14,6 +14,7 @@ from frontend.utils.constants import (
     PAGE_REGISTER,
     PAGE_DASHBOARD,
     PAGE_ORGANIZATIONS,
+    PAGE_MEMBERS,
     PAGE_INVITATIONS,
     PAGE_FILES,
     PAGE_PROFILE,
@@ -35,6 +36,9 @@ def render_page(page_name: str):
     elif page_name == PAGE_ORGANIZATIONS:
         from frontend.pages.Organizations import render as render_organizations
         render_organizations()
+    elif page_name == PAGE_MEMBERS:
+        from frontend.pages.Members import render as render_members
+        render_members()
     elif page_name == PAGE_INVITATIONS:
         from frontend.pages.Invitations import render as render_invitations
         render_invitations()

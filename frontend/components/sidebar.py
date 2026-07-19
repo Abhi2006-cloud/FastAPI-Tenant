@@ -5,6 +5,7 @@ import streamlit as st
 from frontend.utils.constants import (
     PAGE_DASHBOARD,
     PAGE_ORGANIZATIONS,
+    PAGE_MEMBERS,
     PAGE_INVITATIONS,
     PAGE_FILES,
     PAGE_PROFILE,
@@ -72,6 +73,7 @@ def render_sidebar():
         pages = [
             (PAGE_DASHBOARD, "📊 Dashboard"),
             (PAGE_ORGANIZATIONS, "🏢 Organizations"),
+            (PAGE_MEMBERS, "👥 Members"),
             (PAGE_INVITATIONS, "✉️ Invitations"),
             (PAGE_FILES, "📁 Files"),
             (PAGE_PROFILE, "👤 Profile"),

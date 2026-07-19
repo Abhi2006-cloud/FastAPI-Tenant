@@ -155,6 +155,15 @@ Open frontend: http://localhost:8501
 | POST   | `/organizations`      | Create organization      |
 | GET    | `/organizations/my`   | List user's organizations|
 
+### Members
+
+| Method | Path                                      | Description              |
+|--------|-------------------------------------------|--------------------------|
+| GET    | `/organizations/{org_id}/members`         | List organization members|
+| PATCH  | `/organizations/{org_id}/members/{membership_id}/role` | Change member role |
+| DELETE | `/organizations/{org_id}/members/{membership_id}` | Remove member |
+| POST   | `/organizations/{org_id}/transfer-ownership` | Transfer ownership |
+
 ### Invitations
 
 | Method | Path                                | Description        |
@@ -181,9 +190,16 @@ Requires header: `X-Organization-Id: <uuid>`
 
 **Roles** (`memberships` module):
 
-- `owner` — full control
-- `admin` — can invite users
-- `member` — standard access
+- `owner` — full control, can manage members, transfer ownership
+- `admin` — can invite users, view members
+- `member` — standard access (files, view members)
+
+**Member Management** (v1.3.0):
+
+- List members: Any organization member
+- Change roles: Only owner
+- Remove members: Only owner
+- Transfer ownership: Only current owner
 
 Invitations require `owner` or `admin`. File upload/list require any active membership.
 
@@ -237,11 +253,14 @@ alembic downgrade -1
 - User profile page
 - Dashboard with statistics
 
-### v1.3.0 - Member Management (Planned)
-- Member list per organization
-- Role management and permissions
-- Member removal
-- Activity tracking
+### v1.3.0 - Member Management & Organization Administration ✅
+- List organization members with email and role
+- Change member roles (promote/demote admin)
+- Remove members from organization
+- Transfer organization ownership
+- Role-based permission enforcement
+- Member management UI in Streamlit
+- Comprehensive test coverage
 
 ### v1.4.0 - File Download/Delete (Planned)
 - File download functionality
@@ -302,7 +321,7 @@ alembic downgrade -1
 
 ## Current Version
 
-**v1.2.0** - Streamlit Admin Dashboard
+**v1.3.0** - Member Management & Organization Administration
 
 ## License
 

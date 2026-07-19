@@ -95,6 +95,12 @@ class APIClient:
         response = requests.delete(url, headers=self._get_headers(require_auth))
         return self._handle_response(response)
 
+    def patch(self, endpoint: str, data: dict | None = None, require_auth: bool = True) -> Any:
+        """Make a PATCH request."""
+        url = f"{self.base_url}{endpoint}"
+        response = requests.patch(url, headers=self._get_headers(require_auth), json=data)
+        return self._handle_response(response)
+
 
 # Global API client instance
 api_client = APIClient()
