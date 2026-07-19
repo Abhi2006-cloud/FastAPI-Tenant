@@ -175,10 +175,19 @@ Open frontend: http://localhost:8501
 
 Requires header: `X-Organization-Id: <uuid>`
 
-| Method | Path             | Description           |
-|--------|------------------|-----------------------|
-| POST   | `/files/upload`  | Upload file           |
-| GET    | `/files`         | List organization files|
+| Method | Path                        | Description                    |
+|--------|-----------------------------|--------------------------------|
+| POST   | `/files/upload`             | Upload file                    |
+| GET    | `/files`                    | List organization files         |
+| GET    | `/files/stats`              | Get file statistics             |
+| GET    | `/files/{file_id}`          | Get file details                |
+| GET    | `/files/{file_id}/download` | Download file                   |
+| DELETE | `/files/{file_id}`          | Delete file (RBAC enforced)      |
+
+**File Deletion Permissions:**
+- `owner`: Can delete any file
+- `admin`: Can delete any file
+- `member`: Can only delete files they uploaded
 
 ### Health
 
@@ -262,11 +271,15 @@ alembic downgrade -1
 - Member management UI in Streamlit
 - Comprehensive test coverage
 
-### v1.4.0 - File Download/Delete (Planned)
-- File download functionality
-- File deletion with permissions
-- File versioning
-- Storage optimization
+### v1.4.0 - File Download & File Management ✅
+- File download functionality with streaming
+- File deletion with RBAC enforcement
+- File details endpoint with metadata
+- File statistics endpoint (total files, size, average)
+- Storage abstraction layer for cloud migration
+- File size tracking in database
+- Permission-based UI controls in Streamlit
+- Comprehensive test coverage for file operations
 
 ### v1.5.0 - Audit Logs (Planned)
 - Comprehensive audit logging
@@ -321,7 +334,7 @@ alembic downgrade -1
 
 ## Current Version
 
-**v1.3.0** - Member Management & Organization Administration
+**v1.4.0** - File Download & File Management
 
 ## License
 

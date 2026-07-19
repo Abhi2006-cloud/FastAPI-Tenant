@@ -5,6 +5,46 @@ All notable changes to AI Workspace SaaS will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.0] - 2026-07-19
+
+### Added
+- File download endpoint with streaming support
+- File deletion endpoint with RBAC enforcement
+- File details endpoint with metadata and download URL
+- File statistics endpoint (total files, total size, average size)
+- Storage abstraction layer (StorageService) for cloud migration readiness
+- File size tracking in database model
+- File size column to FileRecord model
+- Alembic migration for file_size column
+- Repository methods: get_by_id, delete, get_statistics
+- Service methods: get_file, download_file, delete_file, get_statistics
+- API client methods: get_file_details, download_file, delete_file, get_file_statistics
+- Streamlit Files page enhancements:
+  - Storage statistics display (total files, storage used, average size)
+  - File download button with save functionality
+  - File deletion button with permission-based visibility
+  - File size display in human-readable format
+  - Permission-based UI controls (owner/admin can delete any file, members only their own)
+- Comprehensive test coverage for file operations:
+  - File details retrieval
+  - File download success and error cases
+  - Cross-tenant download prevention
+  - File deletion with RBAC (owner, admin, member permissions)
+  - File statistics calculation
+  - Missing file error handling
+
+### Changed
+- Updated FileRecord model to include file_size column (BigInteger)
+- Updated FileResponse schema to include file_size
+- Updated file upload service to save file_size
+- Updated file repository to use storage abstraction layer
+- Enhanced Streamlit Files page with statistics and action buttons
+- Updated README with file management API documentation
+- Updated authorization documentation with file deletion permissions
+
+### Fixed
+- N/A
+
 ## [1.3.0] - 2026-07-14
 
 ### Added
