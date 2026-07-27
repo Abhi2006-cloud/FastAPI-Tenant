@@ -13,6 +13,8 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import NotFoundError
+from app.modules.audit.events import RESOURCE_ORGANIZATION, AuditAction
+from app.modules.audit.service import AuditLogService
 from app.modules.memberships.models import MembershipRole
 from app.modules.memberships.service import MembershipService
 from app.modules.organizations.models import Organization
@@ -34,6 +36,14 @@ class OrganizationService:
             user_id=owner_id,
             organization_id=organization.id,
             role=MembershipRole.OWNER,
+        )
+        await AuditLogService(self.db).create_event(
+            organization_id=organization.id,
+            actor_user_id=owner_id,
+            action=AuditAction.ORGANIZATION_CREATED,
+            resource_type=RESOURCE_ORGANIZATION,
+            resource_id=organization.id,
+            metadata={"name": data.name},
         )
         return organization
 

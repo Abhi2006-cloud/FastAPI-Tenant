@@ -18,6 +18,7 @@ from frontend.utils.constants import (
     PAGE_INVITATIONS,
     PAGE_FILES,
     PAGE_PROFILE,
+    PAGE_AUDIT_LOGS,
 )
 from frontend.utils.session import get_current_page, set_current_page, is_authenticated
 
@@ -48,6 +49,9 @@ def render_page(page_name: str):
     elif page_name == PAGE_PROFILE:
         from frontend.pages.Profile import render as render_profile
         render_profile()
+    elif page_name == PAGE_AUDIT_LOGS:
+        from frontend.pages.Audit_Logs import render as render_audit_logs
+        render_audit_logs()
     else:
         st.error(f"Unknown page: {page_name}")
         set_current_page(PAGE_DASHBOARD)

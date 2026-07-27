@@ -23,6 +23,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import get_settings
 from app.middleware.tenant import TenantContextMiddleware
+from app.modules.audit.router import router as audit_router
 from app.modules.auth.router import router as auth_router
 from app.modules.files.router import router as files_router
 from app.modules.invitations.router import router as invitations_router
@@ -62,6 +63,7 @@ app.include_router(organizations_router)
 app.include_router(invitations_router)
 app.include_router(files_router)
 app.include_router(memberships_router)
+app.include_router(audit_router)
 
 
 @app.get("/health")

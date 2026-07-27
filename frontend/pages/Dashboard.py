@@ -3,8 +3,10 @@
 import streamlit as st
 
 from frontend.api.auth import get_me
+from frontend.api.audit import list_audit_logs
 from frontend.api.client import APIError
 from frontend.api.files import list_files
+from frontend.api.memberships import list_members
 from frontend.api.organizations import list_my_organizations
 from frontend.components.auth_guard import require_auth
 from frontend.utils.session import get_user, get_organization_id, get_organizations, set_organizations
@@ -50,6 +52,19 @@ def render():
         except APIError as e:
             st.error(f"Failed to load files: {e.message}")
     
+    # Fetch recent audit activity if organization is selected
+    recent_activity = []
+    actor_emails: dict[str, str] = {}
+    if org_id:
+        try:
+            with st.spinner("Loading recent activity..."):
+                activity_result = list_audit_logs(page=1, page_size=10)
+                recent_activity = activity_result.get("items", [])
+                members = list_members(org_id)
+                actor_emails = {m["user_id"]: m["email"] for m in members}
+        except APIError:
+            pass
+
     # Display user info
     col1, col2, col3 = st.columns(3)
     
@@ -82,7 +97,28 @@ def render():
         st.warning("⚠️ No organization selected. Please select an organization from the sidebar.")
     
     st.divider()
-    
+
+    # Recent activity
+    if org_id:
+        st.subheader("📋 Recent Activity")
+        if recent_activity:
+            for event in recent_activity:
+                actor_id = event.get("actor_user_id")
+                actor_label = actor_emails.get(
+                    actor_id, str(actor_id) if actor_id else "System"
+                )
+                action_label = event.get("action", "").replace("_", " ").title()
+                with st.expander(
+                    f"{event.get('created_at', '')} — {action_label} by {actor_label}"
+                ):
+                    st.write(f"**Resource Type:** {event.get('resource_type', 'N/A')}")
+                    st.write(f"**Resource ID:** {event.get('resource_id', 'N/A')}")
+                    st.write(f"**Metadata:** {event.get('metadata', {})}")
+        else:
+            st.info("No recent activity recorded yet.")
+
+    st.divider()
+
     # Recent files preview
     if files:
         st.subheader("📁 Recent Files")

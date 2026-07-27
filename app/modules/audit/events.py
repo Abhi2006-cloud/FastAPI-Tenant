@@ -1,0 +1,26 @@
+"""
+Centralized audit event definitions.
+
+All services must use AuditAction and resource type constants when calling
+AuditLogService.create_event() — never write to audit_logs directly.
+"""
+
+import enum
+
+
+class AuditAction(str, enum.Enum):
+    ORGANIZATION_CREATED = "ORGANIZATION_CREATED"
+    MEMBER_INVITED = "MEMBER_INVITED"
+    INVITATION_ACCEPTED = "INVITATION_ACCEPTED"
+    MEMBER_ROLE_CHANGED = "MEMBER_ROLE_CHANGED"
+    MEMBER_REMOVED = "MEMBER_REMOVED"
+    OWNERSHIP_TRANSFERRED = "OWNERSHIP_TRANSFERRED"
+    FILE_UPLOADED = "FILE_UPLOADED"
+    FILE_DOWNLOADED = "FILE_DOWNLOADED"
+    FILE_DELETED = "FILE_DELETED"
+
+
+RESOURCE_ORGANIZATION = "organization"
+RESOURCE_MEMBERSHIP = "membership"
+RESOURCE_INVITATION = "invitation"
+RESOURCE_FILE = "file"

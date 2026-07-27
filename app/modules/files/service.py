@@ -13,6 +13,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.core.exceptions import BadRequestError, ForbiddenError, NotFoundError
+from app.modules.audit.events import RESOURCE_FILE, AuditAction
+from app.modules.audit.service import AuditLogService
 from app.modules.files.models import FileRecord
 from app.modules.files.repository import FileRepository
 from app.modules.files.storage import StorageService
@@ -58,7 +60,16 @@ class FileService:
             file_path=str(storage_path),
             file_size=len(content),
         )
-        return await self.repo.create(record)
+        created = await self.repo.create(record)
+        await AuditLogService(self.db).create_event(
+            organization_id=organization_id,
+            actor_user_id=user_id,
+            action=AuditAction.FILE_UPLOADED,
+            resource_type=RESOURCE_FILE,
+            resource_id=created.id,
+            metadata={"file_name": safe_name, "file_size": len(content)},
+        )
+        return created
 
     async def list_files(self, user_id: UUID, organization_id: UUID) -> list[FileRecord]:
         await self.membership_service.ensure_member(user_id, organization_id)
@@ -84,12 +95,20 @@ class FileService:
     ) -> tuple[bytes, str]:
         """Download file content with organization membership verification."""
         file_record = await self.get_file(user_id, organization_id, file_id)
-        
+
         file_path = Path(file_record.file_path)
         if not self.storage.exists(file_path):
             raise NotFoundError("File not found on storage")
-        
+
         content = self.storage.read(file_path)
+        await AuditLogService(self.db).create_event(
+            organization_id=organization_id,
+            actor_user_id=user_id,
+            action=AuditAction.FILE_DOWNLOADED,
+            resource_type=RESOURCE_FILE,
+            resource_id=file_id,
+            metadata={"file_name": file_record.file_name, "file_size": file_record.file_size},
+        )
         return content, file_record.file_name
 
     async def delete_file(
@@ -104,7 +123,12 @@ class FileService:
         
         if file_record.organization_id != organization_id:
             raise ForbiddenError("File does not belong to this organization")
-        
+
+        file_metadata = {
+            "file_name": file_record.file_name,
+            "file_size": file_record.file_size,
+        }
+
         # RBAC: Owner and Admin can delete any file
         # Member can only delete files they uploaded
         if membership.role == MembershipRole.MEMBER:
@@ -120,6 +144,14 @@ class FileService:
         
         # Delete database record
         await self.repo.delete(file_id)
+        await AuditLogService(self.db).create_event(
+            organization_id=organization_id,
+            actor_user_id=user_id,
+            action=AuditAction.FILE_DELETED,
+            resource_type=RESOURCE_FILE,
+            resource_id=file_id,
+            metadata=file_metadata,
+        )
 
     async def get_statistics(
         self, user_id: UUID, organization_id: UUID

@@ -9,6 +9,7 @@ from frontend.utils.constants import (
     PAGE_INVITATIONS,
     PAGE_FILES,
     PAGE_PROFILE,
+    PAGE_AUDIT_LOGS,
 )
 from frontend.utils.session import (
     get_user,
@@ -76,6 +77,7 @@ def render_sidebar():
             (PAGE_MEMBERS, "👥 Members"),
             (PAGE_INVITATIONS, "✉️ Invitations"),
             (PAGE_FILES, "📁 Files"),
+            (PAGE_AUDIT_LOGS, "📋 Audit Logs"),
             (PAGE_PROFILE, "👤 Profile"),
         ]
         

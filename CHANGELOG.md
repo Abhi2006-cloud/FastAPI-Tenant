@@ -5,6 +5,34 @@ All notable changes to AI Workspace SaaS will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.0] - 2026-07-21
+
+### Added
+- Audit logs module (`app/modules/audit/`) with models, repository, service, schemas, router
+- `audit_logs` table with UUID PK, JSON metadata, UTC timestamps, and performance indexes
+- Centralized `AuditAction` enum and resource type constants
+- `AuditLogService.create_event()`, `list_events()`, and `search_events()` methods
+- Automatic audit event creation for:
+  - Organization creation
+  - Member invitations and acceptance
+  - Role changes, member removal, ownership transfer
+  - File upload, download, and deletion
+- `GET /audit-logs` endpoint with pagination and filters
+- `GET /audit-logs/search` endpoint for PostgreSQL-friendly text search
+- Alembic migration `20260721_0003_add_audit_logs`
+- Streamlit Audit Logs page with action, actor, resource type, date range filters, and search
+- Dashboard recent activity section (last 10 events)
+- Frontend API client for audit log listing and search
+- Comprehensive test coverage in `test_audit_logs.py`
+
+### Changed
+- Updated organization, invitation, membership, and file services to emit audit events
+- Updated README with audit architecture, supported events, and API usage
+- Updated project structure documentation to include audit module
+
+### Fixed
+- Added `self.db` to `MembershipService` so audit event hooks work correctly
+
 ## [1.4.0] - 2026-07-19
 
 ### Added

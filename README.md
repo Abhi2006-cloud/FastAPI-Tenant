@@ -58,7 +58,8 @@ FastAPI-Tenant/
 │   │   ├── organizations/ # Organization management
 │   │   ├── memberships/   # User-organization relationships
 │   │   ├── invitations/   # Invitation system
-│   │   └── files/         # File upload and management
+│   │   ├── files/         # File upload and management
+│   │   └── audit/         # Audit logs and activity tracking
 │   ├── utils/             # Utility functions
 │   ├── tests/             # Test suite
 │   └── main.py            # FastAPI application entry
@@ -189,6 +190,29 @@ Requires header: `X-Organization-Id: <uuid>`
 - `admin`: Can delete any file
 - `member`: Can only delete files they uploaded
 
+### Audit Logs (tenant-scoped)
+
+Requires header: `X-Organization-Id: <uuid>`
+
+| Method | Path                  | Description                              |
+|--------|-----------------------|------------------------------------------|
+| GET    | `/audit-logs`         | List audit events (paginated, filterable)|
+| GET    | `/audit-logs/search`  | Search audit events by action, type, metadata |
+
+**Query parameters for `/audit-logs`:**
+- `page`, `page_size` — pagination (default page 1, page_size 20)
+- `action` — filter by action (e.g. `FILE_UPLOADED`)
+- `actor_user_id` — filter by actor UUID
+- `resource_type` — filter by resource type (e.g. `file`)
+- `start_date`, `end_date` — UTC datetime range filters
+
+**Query parameters for `/audit-logs/search`:**
+- `q` — search action, resource type, or metadata text
+- `action`, `resource_type` — optional exact filters
+- `page`, `page_size` — pagination
+
+**Read access:** All organization members (owner, admin, member) can read audit logs for their organization.
+
 ### Health
 
 | Method | Path      |
@@ -211,6 +235,51 @@ Requires header: `X-Organization-Id: <uuid>`
 - Transfer ownership: Only current owner
 
 Invitations require `owner` or `admin`. File upload/list require any active membership.
+
+## Audit Architecture (v1.5.0)
+
+Audit logging is a core infrastructure capability. Business services record events via `AuditLogService.create_event()` — they never write to the `audit_logs` table directly.
+
+**Design:**
+- Append-only `audit_logs` table scoped by `organization_id`
+- Centralized `AuditAction` enum and resource type constants in `app/modules/audit/events.py`
+- Automatic event creation on organization, membership, invitation, and file operations
+- Read API is org-scoped with membership verification (cross-tenant access returns 403)
+- Indexed on `organization_id`, `created_at`, and `action` for query performance
+- Redis caching can wrap `AuditLogService.list_events()` in a future version
+
+**Supported events:**
+
+| Action | Trigger |
+|--------|---------|
+| `ORGANIZATION_CREATED` | Organization created |
+| `MEMBER_INVITED` | Invitation created |
+| `INVITATION_ACCEPTED` | Invitation accepted |
+| `MEMBER_ROLE_CHANGED` | Member role updated |
+| `MEMBER_REMOVED` | Member removed from org |
+| `OWNERSHIP_TRANSFERRED` | Ownership transferred |
+| `FILE_UPLOADED` | File uploaded |
+| `FILE_DOWNLOADED` | File downloaded |
+| `FILE_DELETED` | File deleted |
+
+**Example API usage:**
+
+```bash
+# List recent events
+curl -H "Authorization: Bearer $TOKEN" \
+     -H "X-Organization-Id: $ORG_ID" \
+     "http://localhost:8000/audit-logs?page=1&page_size=20"
+
+# Filter by action
+curl -H "Authorization: Bearer $TOKEN" \
+     -H "X-Organization-Id: $ORG_ID" \
+     "http://localhost:8000/audit-logs?action=FILE_UPLOADED"
+
+# Search metadata
+curl -H "Authorization: Bearer $TOKEN" \
+     -H "X-Organization-Id: $ORG_ID" \
+     "http://localhost:8000/audit-logs/search?q=report.pdf"
+```
 
 ## Testing
 
@@ -281,11 +350,15 @@ alembic downgrade -1
 - Permission-based UI controls in Streamlit
 - Comprehensive test coverage for file operations
 
-### v1.5.0 - Audit Logs (Planned)
-- Comprehensive audit logging
-- User activity tracking
-- Organization activity logs
-- Security event logging
+### v1.5.0 - Audit Logs & Activity Tracking ✅
+- Append-only `audit_logs` table with JSON metadata
+- Centralized `AuditLogService` for event creation and queries
+- Automatic audit events for org, membership, invitation, and file operations
+- List endpoint with pagination and filters (action, actor, resource type, date range)
+- Search endpoint (PostgreSQL-friendly ILIKE on action, resource type, metadata)
+- Streamlit Audit Logs page with filters and search
+- Dashboard recent activity widget (last 10 events)
+- Comprehensive test coverage for audit logging
 
 ### v2.0.0 - Redis + Caching Layer (Planned)
 - Redis integration for caching
@@ -334,7 +407,7 @@ alembic downgrade -1
 
 ## Current Version
 
-**v1.4.0** - File Download & File Management
+**v1.5.0** - Audit Logs & Activity Tracking
 
 ## License
 

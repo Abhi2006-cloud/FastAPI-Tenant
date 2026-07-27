@@ -16,12 +16,15 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import BadRequestError, ConflictError, ForbiddenError, NotFoundError
+from app.modules.audit.events import RESOURCE_MEMBERSHIP, AuditAction
+from app.modules.audit.service import AuditLogService
 from app.modules.memberships.models import Membership, MembershipRole
 from app.modules.memberships.repository import MembershipRepository
 
 
 class MembershipService:
     def __init__(self, db: AsyncSession) -> None:
+        self.db = db
         self.repo = MembershipRepository(db)
 
     async def ensure_member(
@@ -133,9 +136,22 @@ class MembershipService:
         # Cannot modify owner role
         if target_membership.role == MembershipRole.OWNER:
             raise BadRequestError("Cannot modify organization owner role")
-        
-        # Update role
-        return await self.repo.update_role(membership_id, new_role)
+
+        old_role = target_membership.role
+        updated = await self.repo.update_role(membership_id, new_role)
+        await AuditLogService(self.db).create_event(
+            organization_id=organization_id,
+            actor_user_id=requester_user_id,
+            action=AuditAction.MEMBER_ROLE_CHANGED,
+            resource_type=RESOURCE_MEMBERSHIP,
+            resource_id=membership_id,
+            metadata={
+                "target_user_id": str(target_membership.user_id),
+                "old_role": old_role.value,
+                "new_role": new_role.value,
+            },
+        )
+        return updated
 
     async def remove_member(
         self,
@@ -179,9 +195,23 @@ class MembershipService:
         # Cannot remove self
         if target_membership.user_id == requester_user_id:
             raise ForbiddenError("Cannot remove yourself from the organization")
-        
+
+        removed_user_id = target_membership.user_id
+        removed_role = target_membership.role.value
+
         # Delete membership
         await self.repo.delete(membership_id)
+        await AuditLogService(self.db).create_event(
+            organization_id=organization_id,
+            actor_user_id=requester_user_id,
+            action=AuditAction.MEMBER_REMOVED,
+            resource_type=RESOURCE_MEMBERSHIP,
+            resource_id=membership_id,
+            metadata={
+                "target_user_id": str(removed_user_id),
+                "removed_role": removed_role,
+            },
+        )
 
     async def transfer_ownership(
         self,
@@ -240,6 +270,18 @@ class MembershipService:
         # Perform transfer transactionally
         # Current owner -> admin
         await self.repo.update_role(current_owner_membership.id, MembershipRole.ADMIN)
-        
+
         # Target -> owner
         await self.repo.update_role(target_membership.id, MembershipRole.OWNER)
+        await AuditLogService(self.db).create_event(
+            organization_id=organization_id,
+            actor_user_id=requester_user_id,
+            action=AuditAction.OWNERSHIP_TRANSFERRED,
+            resource_type=RESOURCE_MEMBERSHIP,
+            resource_id=target_membership.id,
+            metadata={
+                "previous_owner_id": str(requester_user_id),
+                "new_owner_id": str(target_membership.user_id),
+                "new_owner_membership_id": str(target_membership.id),
+            },
+        )

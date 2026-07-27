@@ -18,6 +18,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.core.exceptions import BadRequestError, ConflictError, NotFoundError
+from app.modules.audit.events import RESOURCE_INVITATION, AuditAction
+from app.modules.audit.service import AuditLogService
 from app.modules.auth.repository import UserRepository
 from app.modules.invitations.models import Invitation, InvitationStatus
 from app.modules.invitations.repository import InvitationRepository
@@ -74,7 +76,16 @@ class InvitationService:
             expires_at=datetime.now(UTC)
             + timedelta(hours=settings.invitation_expire_hours),
         )
-        return await self.repo.create(invitation)
+        created = await self.repo.create(invitation)
+        await AuditLogService(self.db).create_event(
+            organization_id=organization_id,
+            actor_user_id=inviter_id,
+            action=AuditAction.MEMBER_INVITED,
+            resource_type=RESOURCE_INVITATION,
+            resource_id=created.id,
+            metadata={"email": data.email, "token": created.token},
+        )
+        return created
 
     async def accept_invitation(
         self, user_id: UUID, user_email: str, data: InvitationAccept
@@ -101,11 +112,23 @@ class InvitationService:
             raise BadRequestError("Invitation email does not match your account")
 
         # User joins the tenant as member
-        await self.membership_service.add_member(
+        membership = await self.membership_service.add_member(
             user_id=user_id,
             organization_id=invitation.organization_id,
             role=MembershipRole.MEMBER,
         )
 
         invitation.status = InvitationStatus.ACCEPTED
-        return await self.repo.save(invitation)
+        saved = await self.repo.save(invitation)
+        await AuditLogService(self.db).create_event(
+            organization_id=invitation.organization_id,
+            actor_user_id=user_id,
+            action=AuditAction.INVITATION_ACCEPTED,
+            resource_type=RESOURCE_INVITATION,
+            resource_id=saved.id,
+            metadata={
+                "email": user_email,
+                "membership_id": str(membership.id),
+            },
+        )
+        return saved
