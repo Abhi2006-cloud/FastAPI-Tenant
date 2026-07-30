@@ -22,6 +22,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import get_settings
+from app.core.redis import RedisClient
 from app.middleware.tenant import TenantContextMiddleware
 from app.modules.audit.router import router as audit_router
 from app.modules.auth.router import router as auth_router
@@ -35,8 +36,18 @@ settings = get_settings()
 
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
-    """Startup/shutdown hooks (empty in V1; use for DB pools, etc. later)."""
+    """Startup/shutdown hooks for Redis and other resources."""
+    # Startup: Connect to Redis
+    try:
+        await RedisClient.get_client()
+    except Exception as e:
+        # Fail fast if Redis is unavailable
+        raise RuntimeError(f"Failed to connect to Redis: {e}")
+    
     yield
+    
+    # Shutdown: Close Redis connection
+    await RedisClient.close()
 
 
 app = FastAPI(
@@ -68,5 +79,23 @@ app.include_router(audit_router)
 
 @app.get("/health")
 async def health() -> dict[str, str]:
-    """Simple liveness check — no auth, no database."""
-    return {"status": "ok"}
+    """Liveness check with database and Redis status."""
+    redis_status = "connected" if await RedisClient.health_check() else "disconnected"
+    
+    # Check database connection
+    from sqlalchemy import text
+
+    from app.core.database import engine
+
+    try:
+        async with engine.connect() as conn:
+            await conn.execute(text("SELECT 1"))
+        db_status = "connected"
+    except Exception:
+        db_status = "disconnected"
+    
+    return {
+        "status": "ok",
+        "database": db_status,
+        "redis": redis_status,
+    }

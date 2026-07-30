@@ -15,6 +15,7 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.cache import CacheKeyBuilder, CacheService
 from app.core.exceptions import BadRequestError, ConflictError, ForbiddenError, NotFoundError
 from app.modules.audit.events import RESOURCE_MEMBERSHIP, AuditAction
 from app.modules.audit.service import AuditLogService
@@ -26,6 +27,7 @@ class MembershipService:
     def __init__(self, db: AsyncSession) -> None:
         self.db = db
         self.repo = MembershipRepository(db)
+        self.cache = CacheService()
 
     async def ensure_member(
         self, user_id: UUID, organization_id: UUID
@@ -58,7 +60,11 @@ class MembershipService:
         existing = await self.repo.get_by_user_and_org(user_id, organization_id)
         if existing is not None:
             raise ConflictError("User is already a member of this organization")
-        return await self.repo.create(user_id, organization_id, role)
+        membership = await self.repo.create(user_id, organization_id, role)
+        # Invalidate user's organization list cache (invitation accepted)
+        cache_key = CacheKeyBuilder.user(str(user_id))
+        await self.cache.delete(cache_key)
+        return membership
 
     async def list_members(
         self,
@@ -151,6 +157,9 @@ class MembershipService:
                 "new_role": new_role.value,
             },
         )
+        # Invalidate target user's organization list cache
+        cache_key = CacheKeyBuilder.user(str(target_membership.user_id))
+        await self.cache.delete(cache_key)
         return updated
 
     async def remove_member(
@@ -212,6 +221,9 @@ class MembershipService:
                 "removed_role": removed_role,
             },
         )
+        # Invalidate removed user's organization list cache
+        cache_key = CacheKeyBuilder.user(str(removed_user_id))
+        await self.cache.delete(cache_key)
 
     async def transfer_ownership(
         self,
@@ -285,3 +297,7 @@ class MembershipService:
                 "new_owner_membership_id": str(target_membership.id),
             },
         )
+        # Invalidate both users' organization list cache
+        for user_id in [requester_user_id, target_membership.user_id]:
+            cache_key = CacheKeyBuilder.user(str(user_id))
+            await self.cache.delete(cache_key)

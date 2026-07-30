@@ -18,6 +18,7 @@ AI Workspace is a modular monolith SaaS application featuring:
 - **FastAPI** - Modern, fast web framework for building APIs
 - **SQLAlchemy 2.0** - Async ORM with declarative models
 - **PostgreSQL** - Relational database (supports local and Neon)
+- **Redis** - In-memory data store for caching and infrastructure
 - **Alembic** - Database migration tool
 - **Pydantic** - Data validation using Python type annotations
 - **JWT** - Token-based authentication
@@ -45,6 +46,109 @@ The application follows **clean architecture** with strict separation of concern
 - `X-Organization-Id` header selects the active tenant (organization)
 - Membership is verified before any organization-scoped operation
 - Queries are scoped by `organization_id`
+
+## Redis & Caching Architecture
+
+### Overview
+
+Redis is introduced as a first-class infrastructure component for caching and future features (rate limiting, background jobs, sessions, distributed locks). The application uses a centralized caching layer following the **Cache-Aside pattern**.
+
+### Infrastructure Layers
+
+```
+Routers
+  ↓
+Services
+  ↓
+CacheService (Cache-Aside pattern)
+  ↓
+RedisService (low-level Redis operations)
+  ↓
+Redis
+```
+
+### Cache-Aside Pattern
+
+The `CacheService` implements the Cache-Aside pattern:
+
+1. **Cache Hit**: Return cached data immediately
+2. **Cache Miss**: Query database, store in cache, return data
+3. **Cache Invalidation**: Explicitly invalidate cache when data changes
+
+```python
+# Example usage in services
+async def list_user_organizations(self, user_id: UUID) -> list[Organization]:
+    cache_key = CacheKeyBuilder.user(str(user_id))
+    
+    async def fetch_from_db():
+        orgs = await self.repo.list_for_user(user_id)
+        return [OrganizationResponse.model_validate(org).model_dump() for org in orgs]
+    
+    cached_data = await self.cache.get_or_set(
+        cache_key,
+        fetch_from_db,
+        ttl=CacheTTL.MEDIUM,
+    )
+    
+    return [Organization(**org_data) for org_data in cached_data]
+```
+
+### Cache Key Naming Convention
+
+Cache keys use a centralized `CacheKeyBuilder` with namespaces:
+
+| Namespace    | Pattern                  | Example                     |
+|--------------|--------------------------|-----------------------------|
+| user         | `user:{user_id}`         | `user:123e4567-e89b-12d3`   |
+| organization | `organization:{org_id}`  | `organization:456e789a-12d3`|
+| membership   | `membership:{user_id}:{org_id}` | `membership:123:456` |
+| invitation   | `invitation:{invite_id}` | `invitation:789abc-def`     |
+| file         | `file:{file_id}`         | `file:abc123-def456`        |
+| audit        | `audit:{org_id}`         | `audit:456e789a-12d3`       |
+
+### TTL Strategy
+
+Centralized TTL constants in `CacheTTL`:
+
+| TTL Constant | Duration | Use Case                          |
+|--------------|----------|-----------------------------------|
+| SHORT        | 5 min    | Frequently changing data           |
+| MEDIUM       | 15 min   | User sessions, organization lists |
+| LONG         | 1 hour   | Member lists, file metadata       |
+| VERY_LONG    | 24 hours | Static configuration              |
+| DEFAULT      | 15 min   | Default TTL                       |
+
+### Cache Invalidation
+
+Cache is invalidated on data mutations:
+
+- **Organization created**: Invalidate user's organization list
+- **Membership accepted**: Invalidate user's organization list
+- **Role changed**: Invalidate target user's organization list
+- **Member removed**: Invalidate removed user's organization list
+- **Ownership transferred**: Invalidate both users' organization lists
+
+### Health Check
+
+The `/health` endpoint includes Redis status:
+
+```json
+{
+  "status": "ok",
+  "database": "connected",
+  "redis": "connected"
+}
+```
+
+### Future-Ready Design
+
+The Redis infrastructure supports future features:
+
+- **Rate Limiting**: Use `RedisService.increment()` with TTL
+- **Session Storage**: Use `RedisService.json_set()` for session data
+- **Background Jobs**: Use Redis queues (future implementation)
+- **Distributed Locks**: Use `RedisService.set()` with NX flag
+- **Real-time Features**: Use Redis pub/sub (future implementation)
 
 ## Project Structure
 
@@ -360,7 +464,7 @@ alembic downgrade -1
 - Dashboard recent activity widget (last 10 events)
 - Comprehensive test coverage for audit logging
 
-### v2.0.0 - Redis + Caching Layer (Planned)
+### v2.0.0 - Redis + Caching Layer (Completed)
 - Redis integration for caching
 - Session management
 - Rate limiting

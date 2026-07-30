@@ -8,6 +8,7 @@ from frontend.api.client import APIError
 from frontend.api.files import list_files
 from frontend.api.memberships import list_members
 from frontend.api.organizations import list_my_organizations
+from frontend.api.health import get_health
 from frontend.components.auth_guard import require_auth
 from frontend.utils.session import get_user, get_organization_id, get_organizations, set_organizations
 
@@ -65,8 +66,16 @@ def render():
         except APIError:
             pass
 
+    # Fetch health status for cache info
+    redis_status = "unknown"
+    try:
+        health_data = get_health()
+        redis_status = health_data.get("redis", "unknown")
+    except APIError:
+        pass
+
     # Display user info
-    col1, col2, col3 = st.columns(3)
+    col1, col2, col3, col4 = st.columns(4)
     
     with col1:
         st.metric("User Email", user.get("email", "N/A"))
@@ -79,6 +88,10 @@ def render():
             st.metric("Files in Current Org", len(files))
         else:
             st.metric("Files in Current Org", "N/A")
+    
+    with col4:
+        redis_icon = "🟢" if redis_status == "connected" else "🔴"
+        st.metric("Redis Cache", f"{redis_icon} {redis_status.title()}")
     
     st.divider()
     

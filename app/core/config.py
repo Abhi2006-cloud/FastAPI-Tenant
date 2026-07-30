@@ -36,6 +36,13 @@ class Settings(BaseSettings):
 
     invitation_expire_hours: int = 72
 
+    # Redis
+    redis_url: str = "redis://localhost:6379"
+    redis_host: str | None = None
+    redis_port: int = 6379
+    redis_password: str | None = None
+    redis_db: int = 0
+
     @property
     def sync_database_url(self) -> str:
         """Alembic migrations need a sync driver URL (no +asyncpg)."""

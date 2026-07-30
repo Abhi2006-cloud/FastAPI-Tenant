@@ -1,4 +1,5 @@
 from collections.abc import AsyncGenerator
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -8,6 +9,26 @@ from app.core.database import Base, get_db
 from app.main import app
 
 TEST_DATABASE_URL = "sqlite+aiosqlite:///:memory:"
+
+
+@pytest.fixture(autouse=True)
+def mock_redis_for_tests():
+    """Prevent tests from requiring a live Redis connection."""
+    mock_client = AsyncMock()
+    mock_client.ping = AsyncMock(return_value=True)
+    mock_client.get = AsyncMock(return_value=None)
+    mock_client.set = AsyncMock(return_value=True)
+    mock_client.setex = AsyncMock(return_value=True)
+    mock_client.delete = AsyncMock(return_value=1)
+    mock_client.exists = AsyncMock(return_value=0)
+    mock_client.close = AsyncMock()
+
+    with (
+        patch("app.core.redis.RedisClient.get_client", return_value=mock_client),
+        patch("app.core.redis.RedisClient.health_check", return_value=True),
+        patch("app.core.redis.RedisClient.close", new=AsyncMock()),
+    ):
+        yield mock_client
 
 
 @pytest.fixture

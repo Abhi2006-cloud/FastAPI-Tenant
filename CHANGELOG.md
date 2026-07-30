@@ -5,6 +5,34 @@ All notable changes to AI Workspace SaaS will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.0] - 2026-07-30
+
+### Added
+- Redis infrastructure layer (`app/core/redis.py`) with connection management and health checks
+- RedisService with low-level Redis operations (get, set, delete, exists, expire, ttl, increment, decrement, keys, flush_namespace, json_set, json_get)
+- CacheService implementing Cache-Aside pattern (get_or_set, invalidate, invalidate_pattern, set_with_ttl, get, delete)
+- Centralized CacheKeyBuilder with namespaces (user, organization, membership, invitation, file, audit)
+- CacheTTL constants (SHORT: 5min, MEDIUM: 15min, LONG: 1hour, VERY_LONG: 24hours, DEFAULT: 15min)
+- Redis integration into FastAPI lifespan (startup connection verification, shutdown graceful close)
+- Extended `/health` endpoint to include database and Redis status
+- Caching for `GET /organizations/my` endpoint with Cache-Aside pattern
+- Cache invalidation on organization created, membership accepted, role changed, member removed, ownership transferred
+- Comprehensive logging for Redis operations (connected, disconnected, cache hit/miss, invalidation)
+- Comprehensive test coverage in `test_cache.py` with mocked Redis
+- Streamlit Dashboard cache statistics card showing Redis connection status
+- Frontend health check API client (`frontend/api/health.py`)
+- Environment variables for Redis configuration (REDIS_URL, REDIS_HOST, REDIS_PORT, REDIS_PASSWORD)
+
+### Changed
+- Updated OrganizationService to use CacheService for organization list caching
+- Updated MembershipService to invalidate cache on membership changes
+- Updated README with Redis architecture, Cache-Aside pattern, key naming convention, TTL strategy
+- Updated project structure documentation to include cache infrastructure
+- Updated tech stack to include Redis
+
+### Fixed
+- N/A
+
 ## [1.5.0] - 2026-07-21
 
 ### Added
