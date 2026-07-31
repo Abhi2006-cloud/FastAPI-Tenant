@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.core.exceptions import BadRequestError, ForbiddenError, NotFoundError
+from app.jobs.tasks import process_file_upload_task
 from app.modules.audit.events import RESOURCE_FILE, AuditAction
 from app.modules.audit.service import AuditLogService
 from app.modules.files.models import FileRecord
@@ -20,6 +21,7 @@ from app.modules.files.repository import FileRepository
 from app.modules.files.storage import StorageService
 from app.modules.memberships.models import MembershipRole
 from app.modules.memberships.service import MembershipService
+from app.services.job_service import JobService
 from app.utils.files import build_storage_path, validate_upload
 
 settings = get_settings()
@@ -31,6 +33,7 @@ class FileService:
         self.repo = FileRepository(db)
         self.membership_service = MembershipService(db)
         self.storage = StorageService(Path(settings.upload_dir))
+        self.job_service = JobService()
 
     async def upload_file(
         self,
@@ -61,6 +64,14 @@ class FileService:
             file_size=len(content),
         )
         created = await self.repo.create(record)
+        # Worker post-processing (metadata collection; future: virus scan, thumbnails).
+        # In JOB_SYNC_MODE the request session is the source of truth; skip separate DB work.
+        if not settings.job_sync_mode:
+            self.job_service.enqueue(
+                process_file_upload_task,
+                str(created.id),
+                str(organization_id),
+            )
         await AuditLogService(self.db).create_event(
             organization_id=organization_id,
             actor_user_id=user_id,

@@ -43,6 +43,19 @@ class Settings(BaseSettings):
     redis_password: str | None = None
     redis_db: int = 0
 
+    # Background jobs (RQ)
+    job_sync_mode: bool = False
+    rq_job_timeout: int = 300
+    rq_retry_max: int = 3
+    rq_retry_intervals: str = "10,30,60"
+    rq_result_ttl: int = 86400
+    rq_failure_ttl: int = 604800
+
+    @property
+    def rq_retry_interval_list(self) -> list[int]:
+        """Parse comma-separated retry intervals into seconds."""
+        return [int(x.strip()) for x in self.rq_retry_intervals.split(",") if x.strip()]
+
     @property
     def sync_database_url(self) -> str:
         """Alembic migrations need a sync driver URL (no +asyncpg)."""

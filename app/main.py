@@ -28,6 +28,7 @@ from app.modules.audit.router import router as audit_router
 from app.modules.auth.router import router as auth_router
 from app.modules.files.router import router as files_router
 from app.modules.invitations.router import router as invitations_router
+from app.modules.jobs.router import router as jobs_router
 from app.modules.memberships.router import router as memberships_router
 from app.modules.organizations.router import router as organizations_router
 
@@ -75,11 +76,14 @@ app.include_router(invitations_router)
 app.include_router(files_router)
 app.include_router(memberships_router)
 app.include_router(audit_router)
+app.include_router(jobs_router)
 
 
 @app.get("/health")
-async def health() -> dict[str, str]:
-    """Liveness check with database and Redis status."""
+async def health() -> dict:
+    """Liveness check with database, Redis, worker, and queue status."""
+    from app.services.job_service import JobService
+
     redis_status = "connected" if await RedisClient.health_check() else "disconnected"
     
     # Check database connection
@@ -88,14 +92,30 @@ async def health() -> dict[str, str]:
     from app.core.database import engine
 
     try:
-        async with engine.connect() as conn:
-            await conn.execute(text("SELECT 1"))
+        async def _check_db():
+            async with engine.connect() as conn:
+                await conn.execute(text("SELECT 1"))
+        import asyncio
+        await asyncio.wait_for(_check_db(), timeout=1.0)
         db_status = "connected"
     except Exception:
         db_status = "disconnected"
+
+
+    worker_stats = {"count": 0, "status": "unknown", "workers": []}
+    queue_stats: dict = {}
+    if redis_status == "connected":
+        try:
+            worker_stats = JobService.get_worker_stats()
+            queue_stats = JobService.get_queue_stats()
+        except Exception:
+            worker_stats = {"count": 0, "status": "unknown", "workers": []}
     
     return {
         "status": "ok",
         "database": db_status,
         "redis": redis_status,
+        "worker": worker_stats["status"],
+        "workers": worker_stats,
+        "queues": queue_stats,
     }

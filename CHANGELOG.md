@@ -5,6 +5,28 @@ All notable changes to AI Workspace SaaS will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.0] - 2026-07-31
+
+### Added
+- RQ (Redis Queue) background job infrastructure (`app/jobs/`, `app/core/rq.py`)
+- JobService as single interface for enqueue, cancel, retry, and status (`app/services/job_service.py`)
+- Three priority queues: default, high, low
+- Dedicated worker process (`python -m app.jobs.worker`) with graceful shutdown
+- Background tasks: audit log persistence, file upload processing, invitation processing
+- Job status API: `GET /jobs/{job_id}`, `GET /jobs`
+- Extended `/health` with worker and queue status
+- Configurable retry strategy (`RQ_RETRY_MAX`, `RQ_RETRY_INTERVALS`, `RQ_JOB_TIMEOUT`)
+- Delayed job scheduling via `app/jobs/scheduler.py`
+- `JOB_SYNC_MODE` for synchronous job execution in tests
+- Streamlit Background Jobs page with auto-refresh
+- Comprehensive test coverage in `test_jobs.py`
+
+### Changed
+- `AuditLogService.create_event()` now enqueues background jobs instead of synchronous DB writes
+- File upload enqueues post-processing task after metadata is saved
+- Invitation creation enqueues invitation processing task
+- Updated README with RQ architecture, worker commands, and development workflow
+
 ## [2.0.0] - 2026-07-30
 
 ### Added

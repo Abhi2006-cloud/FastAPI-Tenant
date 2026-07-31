@@ -1,0 +1,147 @@
+"""
+RQ worker tasks.
+
+Workers execute these functions. Each task delegates to the service layer
+via async database sessions — no business logic lives here.
+"""
+
+from __future__ import annotations
+
+import logging
+from pathlib import Path
+from uuid import UUID
+
+from app.core.config import get_settings
+from app.core.database import async_session_factory
+from app.jobs.async_runner import run_async
+from app.modules.audit.events import AuditAction
+from app.modules.audit.worker import persist_audit_event
+from app.modules.files.repository import FileRepository
+from app.modules.files.storage import StorageService
+
+logger = logging.getLogger(__name__)
+settings = get_settings()
+
+
+async def _persist_audit_event(
+    organization_id: str,
+    actor_user_id: str | None,
+    action: str,
+    resource_type: str,
+    resource_id: str | None = None,
+    metadata: dict | None = None,
+) -> dict:
+    async with async_session_factory() as session:
+        try:
+            audit_log = await persist_audit_event(
+                session,
+                organization_id=UUID(organization_id),
+                actor_user_id=UUID(actor_user_id) if actor_user_id else None,
+                action=AuditAction(action),
+                resource_type=resource_type,
+                resource_id=UUID(resource_id) if resource_id else None,
+                metadata=metadata,
+            )
+            await session.commit()
+            return {"audit_log_id": str(audit_log.id)}
+        except Exception:
+            await session.rollback()
+            raise
+
+
+def record_audit_event_task(
+    organization_id: str,
+    actor_user_id: str | None,
+    action: str,
+    resource_type: str,
+    resource_id: str | None = None,
+    metadata: dict | None = None,
+) -> dict:
+    """Persist an audit log entry (executed by worker)."""
+    logger.info("Job started: record_audit_event action=%s org=%s", action, organization_id)
+    try:
+        result = run_async(
+            _persist_audit_event(
+                organization_id,
+                actor_user_id,
+                action,
+                resource_type,
+                resource_id,
+                metadata,
+            )
+        )
+        logger.info("Job completed: record_audit_event audit_log_id=%s", result["audit_log_id"])
+        return result
+    except Exception as exc:
+        logger.exception("Job failed: record_audit_event: %s", exc)
+        raise
+
+
+async def _process_file_upload(file_id: str, organization_id: str) -> dict:
+    async with async_session_factory() as session:
+        repo = FileRepository(session)
+        record = await repo.get_by_id(UUID(file_id))
+        if record is None:
+            raise ValueError(f"File not found: {file_id}")
+        if str(record.organization_id) != organization_id:
+            raise ValueError("File does not belong to organization")
+
+        storage = StorageService(Path(settings.upload_dir))
+        file_path = Path(record.file_path)
+        on_disk = storage.exists(file_path)
+
+        metadata = {
+            "file_id": str(record.id),
+            "organization_id": organization_id,
+            "file_name": record.file_name,
+            "file_size": record.file_size,
+            "file_path": record.file_path,
+            "uploaded_by": str(record.uploaded_by),
+            "on_disk": on_disk,
+        }
+        await session.commit()
+        return metadata
+
+
+def process_file_upload_task(file_id: str, organization_id: str) -> dict:
+    """Collect file metadata after upload (placeholder for future processing)."""
+    logger.info("Job started: process_file_upload file_id=%s", file_id)
+    try:
+        result = run_async(_process_file_upload(file_id, organization_id))
+        logger.info("Job completed: process_file_upload file_id=%s", file_id)
+        return result
+    except Exception as exc:
+        logger.exception("Job failed: process_file_upload: %s", exc)
+        raise
+
+
+def process_invitation_task(
+    invitation_id: str,
+    organization_id: str,
+    email: str,
+    inviter_id: str,
+) -> dict:
+    """
+    Process invitation event (placeholder for future email delivery).
+
+    The invitation record is already persisted; this task handles async follow-up.
+    """
+    logger.info(
+        "Job started: process_invitation invitation_id=%s email=%s org=%s",
+        invitation_id,
+        email,
+        organization_id,
+    )
+    try:
+        result = {
+            "invitation_id": invitation_id,
+            "organization_id": organization_id,
+            "email": email,
+            "inviter_id": inviter_id,
+            "status": "processed",
+        }
+        logger.info("Job completed: process_invitation invitation_id=%s", invitation_id)
+        return result
+    except Exception as exc:
+        logger.exception("Job failed: process_invitation: %s", exc)
+        raise

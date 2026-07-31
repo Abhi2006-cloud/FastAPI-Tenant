@@ -203,7 +203,7 @@ class RedisService:
     async def json_set(self, key: str, value: dict, ttl: int | None = None) -> bool:
         """Set JSON value (future-ready for RedisJSON)."""
         try:
-            json_str = json.dumps(value)
+            json_str = json.dumps(value, default=str)
             if ttl:
                 return await self.set_with_ttl(key, json_str, ttl)
             return await self.set(key, json_str)
@@ -246,13 +246,14 @@ class CacheService:
         """Set value in cache with TTL."""
         try:
             if isinstance(value, (dict, list)):
-                value = json.dumps(value)
+                value = json.dumps(value, default=str)
             else:
                 value = str(value)
             return await self._redis.set_with_ttl(key, value, ttl)
         except Exception as e:
             logger.error(f"Cache SET error for key {key}: {e}")
             return False
+
 
     async def delete(self, key: str) -> bool:
         """Delete key from cache."""

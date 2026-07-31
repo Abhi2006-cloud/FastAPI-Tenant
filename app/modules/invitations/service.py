@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.core.exceptions import BadRequestError, ConflictError, NotFoundError
+from app.jobs.tasks import process_invitation_task
 from app.modules.audit.events import RESOURCE_INVITATION, AuditAction
 from app.modules.audit.service import AuditLogService
 from app.modules.auth.repository import UserRepository
@@ -27,6 +28,7 @@ from app.modules.invitations.schemas import InvitationAccept, InvitationCreate
 from app.modules.memberships.models import MembershipRole
 from app.modules.memberships.service import MembershipService
 from app.modules.organizations.repository import OrganizationRepository
+from app.services.job_service import JobService
 
 settings = get_settings()
 
@@ -38,6 +40,7 @@ class InvitationService:
         self.membership_service = MembershipService(db)
         self.org_repo = OrganizationRepository(db)
         self.user_repo = UserRepository(db)
+        self.job_service = JobService()
 
     async def create_invitation(
         self,
@@ -77,6 +80,13 @@ class InvitationService:
             + timedelta(hours=settings.invitation_expire_hours),
         )
         created = await self.repo.create(invitation)
+        self.job_service.enqueue(
+            process_invitation_task,
+            str(created.id),
+            str(organization_id),
+            data.email,
+            str(inviter_id),
+        )
         await AuditLogService(self.db).create_event(
             organization_id=organization_id,
             actor_user_id=inviter_id,

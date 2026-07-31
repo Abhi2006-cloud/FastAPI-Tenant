@@ -130,13 +130,24 @@ Cache is invalidated on data mutations:
 
 ### Health Check
 
-The `/health` endpoint includes Redis status:
+The `/health` endpoint includes Redis, worker, and queue status:
 
 ```json
 {
   "status": "ok",
   "database": "connected",
-  "redis": "connected"
+  "redis": "connected",
+  "worker": "running",
+  "workers": {
+    "count": 1,
+    "status": "running",
+    "workers": [{"name": "...", "state": "busy", "queues": ["default", "high", "low"]}]
+  },
+  "queues": {
+    "default": {"queued": 0, "started": 0, "finished": 12, "failed": 0},
+    "high": {"queued": 0, "started": 0, "finished": 0, "failed": 0},
+    "low": {"queued": 0, "started": 0, "finished": 0, "failed": 0}
+  }
 }
 ```
 
@@ -146,9 +157,141 @@ The Redis infrastructure supports future features:
 
 - **Rate Limiting**: Use `RedisService.increment()` with TTL
 - **Session Storage**: Use `RedisService.json_set()` for session data
-- **Background Jobs**: Use Redis queues (future implementation)
+- **Background Jobs**: Centralized RQ task processing (see details below)
+
+## Background Job Architecture (v2.1.0)
+
+### Overview
+
+Background job processing is powered by **RQ (Redis Queue)** and managed through a centralized `JobService` interface (`app/services/job_service.py`). Background tasks delegate to the service layer via async database sessions, using clean event loop connection pool disposal for zero connection leaks.
+
+### Architecture Flow
+
+```
+FastAPI Service Layer
+  ↓ (enqueue / enqueue_high_priority / enqueue_low_priority / enqueue_delayed)
+JobService
+  ↓
+RQ Queues (default, high, low)
+  ↓
+Redis (Raw binary storage: decode_responses=False)
+  ↓
+RQ Worker Process (python -m app.jobs.worker)
+  ↓
+async_runner (_execute_with_cleanup -> engine.dispose())
+  ↓
+Database / Storage / Audit Log Persistence
+```
+
+### Key Components
+
+- **`JobService` (`app/services/job_service.py`)**: Single interface for background job management (enqueueing, listing, status lookup, retry, cancellation). Routers and services interact exclusively with `JobService`.
+- **`Worker` (`app/jobs/worker.py`)**: RQ worker process listening to `default`, `high`, and `low` priority queues with graceful shutdown signal handling (`SIGTERM`/`SIGINT`).
+- **`async_runner` (`app/jobs/async_runner.py`)**: Executes async coroutines within worker processes. Wraps tasks in a cleanup coroutine that disposes of the SQLAlchemy engine pool (`await engine.dispose()`) inside a `finally` block before `asyncio.run()` closes the event loop.
+- **`scheduler` (`app/jobs/scheduler.py`)**: Enqueues delayed tasks via `enqueue_in()`, respecting `JOB_SYNC_MODE`.
+- **Binary Redis Connection (`app/core/rq.py`)**: Connects to Redis with `decode_responses=False` so RQ can store and retrieve raw binary pickled job payloads cleanly.
+- **`JOB_SYNC_MODE`**: When `JOB_SYNC_MODE=true` (default in tests), tasks execute synchronously on the active thread for deterministic testing and local development without Redis.
+
+### Running RQ Workers
+
+Start an RQ worker process in your terminal:
+
+```bash
+python -m app.jobs.worker
+```
+
+### Job Management APIs
+
+- `GET /jobs`: List background jobs (supports optional query params: `status`, `queue`, `limit`).
+- `GET /jobs/{job_id}`: Retrieve detailed job status, execution timestamps, serializable result, or error trace payload.
+
 - **Distributed Locks**: Use `RedisService.set()` with NX flag
 - **Real-time Features**: Use Redis pub/sub (future implementation)
+
+## Background Jobs Architecture (v2.1.0)
+
+### Overview
+
+Asynchronous task processing uses **RQ (Redis Queue)** with the existing Redis connection. Jobs are enqueued through `JobService` — routers and services never talk to RQ directly.
+
+```
+Request → Router → Service → JobService → RQ Queue → Redis → Worker → Task → Service Layer
+```
+
+### Project Structure
+
+```
+app/
+├── core/rq.py              # Shared sync Redis connection for RQ
+├── jobs/
+│   ├── queue.py            # Queue names (default, high, low)
+│   ├── tasks.py            # Worker task functions
+│   ├── worker.py           # Worker process entry point
+│   ├── scheduler.py        # Delayed job scheduling
+│   └── job_status.py       # Status mapping helpers
+├── services/job_service.py # Single interface for enqueue/status/cancel/retry
+└── modules/jobs/router.py  # GET /jobs, GET /jobs/{job_id}
+```
+
+### Queues
+
+| Queue   | Purpose                          |
+|---------|----------------------------------|
+| default | Standard background jobs         |
+| high    | Time-sensitive tasks             |
+| low     | Batch / non-urgent work          |
+
+### Background Tasks
+
+| Task | Trigger | Worker Action |
+|------|---------|---------------|
+| `record_audit_event_task` | Any `AuditLogService.create_event()` call | Persists audit log to database |
+| `process_file_upload_task` | File upload completes | Collects file metadata (extensible for virus scan, thumbnails) |
+| `process_invitation_task` | Invitation created | Processes invitation event (extensible for email delivery) |
+
+### Retry Strategy
+
+Configurable via environment variables:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `RQ_RETRY_MAX` | 3 | Maximum retry attempts |
+| `RQ_RETRY_INTERVALS` | `10,30,60` | Seconds between retries |
+| `RQ_JOB_TIMEOUT` | 300 | Job timeout in seconds |
+
+Failed jobs are logged with exception info. Workers do not crash on task failure.
+
+### Job Status API
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/jobs/{job_id}` | Job status (queued, started, finished, failed) |
+| GET | `/jobs` | List jobs (filter by status, queue) |
+
+### Running Workers
+
+Three processes run together in development:
+
+```bash
+# Terminal 1 — API
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+
+# Terminal 2 — RQ Worker
+python -m app.jobs.worker
+
+# Terminal 3 — Streamlit Admin
+cd frontend && streamlit run app.py
+```
+
+The API enqueues jobs to Redis. The worker pulls jobs from Redis and executes task functions. Streamlit monitors job status via the `/jobs` API.
+
+### Development / Testing
+
+Set `JOB_SYNC_MODE=true` to execute jobs synchronously without a worker (used automatically in pytest).
+
+```bash
+JOB_SYNC_MODE=true uvicorn app.main:app --reload
+```
 
 ## Project Structure
 
@@ -163,7 +306,10 @@ FastAPI-Tenant/
 │   │   ├── memberships/   # User-organization relationships
 │   │   ├── invitations/   # Invitation system
 │   │   ├── files/         # File upload and management
-│   │   └── audit/         # Audit logs and activity tracking
+│   │   ├── audit/         # Audit logs and activity tracking
+│   │   └── jobs/          # Background job status API
+│   ├── jobs/              # RQ workers, queues, tasks
+│   ├── services/          # Cross-cutting services (JobService)
 │   ├── utils/             # Utility functions
 │   ├── tests/             # Test suite
 │   └── main.py            # FastAPI application entry
@@ -225,7 +371,17 @@ pip install psycopg2-binary
 alembic upgrade head
 ```
 
-### 5. Run the backend API
+### 5. Run Redis (required)
+
+```bash
+# macOS with Homebrew
+brew services start redis
+
+# Or Docker
+docker run -d -p 6379:6379 redis:7
+```
+
+### 6. Run the backend API
 
 ```bash
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
@@ -233,7 +389,13 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 
 Open interactive docs: http://localhost:8000/docs
 
-### 6. Run the frontend (optional)
+### 7. Run the RQ worker (required for async jobs)
+
+```bash
+python -m app.jobs.worker
+```
+
+### 8. Run the frontend (optional)
 
 ```bash
 cd frontend
@@ -323,6 +485,13 @@ Requires header: `X-Organization-Id: <uuid>`
 |--------|-----------|
 | GET    | `/health` |
 
+### Background Jobs
+
+| Method | Path              | Description                    |
+|--------|-------------------|--------------------------------|
+| GET    | `/jobs/{job_id}`  | Get job status and result      |
+| GET    | `/jobs`           | List jobs (filter by status)   |
+
 ## Authorization
 
 **Roles** (`memberships` module):
@@ -343,6 +512,8 @@ Invitations require `owner` or `admin`. File upload/list require any active memb
 ## Audit Architecture (v1.5.0)
 
 Audit logging is a core infrastructure capability. Business services record events via `AuditLogService.create_event()` — they never write to the `audit_logs` table directly.
+
+**As of v2.1.0**, audit events are enqueued as background jobs and persisted asynchronously by RQ workers.
 
 **Design:**
 - Append-only `audit_logs` table scoped by `organization_id`
@@ -464,19 +635,27 @@ alembic downgrade -1
 - Dashboard recent activity widget (last 10 events)
 - Comprehensive test coverage for audit logging
 
-### v2.0.0 - Redis + Caching Layer (Completed)
+### v2.0.0 - Redis Infrastructure & Caching Layer ✅
 - Redis integration for caching
-- Session management
-- Rate limiting
-- Real-time features preparation
+- Cache-aside pattern with CacheService
+- Organization list caching with invalidation
+- Health check with Redis status
 
-### v2.1.0 - Background Jobs (Planned)
-- Celery integration
-- Async task processing
-- Email notifications
-- Scheduled jobs
+### v2.1.0 - Background Jobs & Task Processing ✅
+- RQ (Redis Queue) integration reusing existing Redis connection
+- Dedicated worker process with graceful shutdown
+- Multiple queues (default, high, low)
+- JobService as single enqueue interface
+- Async audit log persistence
+- File upload post-processing task
+- Invitation processing task
+- Job status API (`GET /jobs/{job_id}`)
+- Health check with worker and queue status
+- Streamlit Background Jobs monitoring page
+- Configurable retry strategy
+- Comprehensive test coverage
 
-### v2.2.0 - Search (Planned)
+### v2.2.0 - Email Notifications (Planned)
 - Full-text search
 - Elasticsearch integration
 - Advanced filtering
@@ -511,7 +690,7 @@ alembic downgrade -1
 
 ## Current Version
 
-**v1.5.0** - Audit Logs & Activity Tracking
+**v2.1.0** - Background Jobs & Task Processing
 
 ## License
 

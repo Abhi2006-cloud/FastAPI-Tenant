@@ -26,7 +26,7 @@ class RedisClient:
     _instance: Redis | None = None
 
     @staticmethod
-    def _build_url() -> str:
+    def build_url() -> str:
         """Build Redis URL from settings."""
         if settings.redis_url and settings.redis_url != "redis://localhost:6379":
             return settings.redis_url
@@ -43,14 +43,7 @@ class RedisClient:
         return f"{scheme}://{host}:{port}/{db}"
 
     @classmethod
-    async def get_client(cls) -> Redis:
-        """Get or create Redis client instance."""
-        if cls._instance is None:
-            cls._instance = await cls._create_client()
-        return cls._instance
-
-    @classmethod
-    def _connection_kwargs(cls, url: str) -> dict[str, Any]:
+    def connection_kwargs(cls, url: str) -> dict[str, Any]:
         """Extra connection options (TLS for Upstash rediss:// URLs)."""
         kwargs: dict[str, Any] = {
             "encoding": "utf-8",
@@ -64,10 +57,17 @@ class RedisClient:
         return kwargs
 
     @classmethod
+    async def get_client(cls) -> Redis:
+        """Get or create Redis client instance."""
+        if cls._instance is None:
+            cls._instance = await cls._create_client()
+        return cls._instance
+
+    @classmethod
     async def _create_client(cls) -> Redis:
         """Create new Redis client with connection pool."""
-        url = cls._build_url()
-        client = redis.from_url(url, **cls._connection_kwargs(url))
+        url = cls.build_url()
+        client = redis.from_url(url, **cls.connection_kwargs(url))
         
         # Verify connection
         try:
