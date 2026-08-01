@@ -8,9 +8,13 @@ Listens to default, high, and low priority queues with graceful shutdown.
 
 from __future__ import annotations
 
+import os
+os.environ["OBJC_DISABLE_INITIALIZE_FORK_SAFETY"] = "YES"
+
 import logging
 import signal
 import sys
+
 
 from rq import Worker
 

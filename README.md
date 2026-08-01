@@ -293,6 +293,94 @@ Set `JOB_SYNC_MODE=true` to execute jobs synchronously without a worker (used au
 JOB_SYNC_MODE=true uvicorn app.main:app --reload
 ```
 
+## Search Infrastructure (v2.2.0)
+
+### Overview
+
+Full-text search in the SaaS platform is powered by **Meilisearch Cloud**. Search is designed as an **optional infrastructure component** that degrades gracefully:
+- If Meilisearch is unreachable, has expired credentials, or is offline, all other core SaaS features continue running normally.
+- Search-related APIs return a clear `503 Service Unavailable` error instead of internal stack traces.
+- Streamlit displays a warning banner and disables only search components while keeping the rest of the dashboard responsive.
+
+### Architecture
+
+All search requests flow through a dedicated infrastructure layer. Direct communication with Meilisearch from routers is prohibited.
+
+```
+FastAPI Router → SearchService → CacheService (Cache-Aside)
+                                   ↓
+                             SearchRepository
+                                   ↓ (Circuit Breaker)
+                             SearchClient → Meilisearch Cloud API
+```
+
+### Environment Variables
+
+Add the following to your `.env` file (configured in `app/core/config.py`):
+
+```ini
+# Meilisearch Cloud
+MEILISEARCH_URL=https://ms-xxx.meilisearch.io
+MEILISEARCH_API_KEY=your-admin-api-key
+MEILISEARCH_INDEX_PREFIX=ai_workspace
+```
+
+### Circuit Breaker Behavior
+
+To prevent blocking application workers and routers during search service outages, a lightweight in-memory Circuit Breaker is active on the `SearchClient`:
+- **State CLOSED**: Requests hit Meilisearch. If 5 consecutive requests fail (connection errors, timeouts, 5xx), the breaker enters **OPEN**.
+- **State OPEN**: Requests are blocked immediately. The client raises a `MeilisearchUnavailableException` without hitting the network.
+- **State HALF-OPEN**: After a **30-second cooldown**, the next single request acts as a trial. A success transitions the breaker to **CLOSED**; a failure returns it to **OPEN**.
+
+### Index Configuration & Lifecycle
+
+Indexes are automatically created and updated with appropriate settings on application startup (within FastAPI `lifespan` hooks).
+
+| Base Index Name | Full Index Name | Filterable Attributes | Sortable Attributes |
+|-----------------|-----------------|-----------------------|---------------------|
+| `organizations` | `ai_workspace_organizations` | `id` | `created_at` |
+| `members`       | `ai_workspace_members`       | `organization_id`, `id`, `user_id` | `created_at` |
+| `files`         | `ai_workspace_files`         | `organization_id`, `id` | `created_at` |
+| `audit_logs`    | `ai_workspace_audit_logs`    | `organization_id`, `id`, `action` | `created_at` |
+
+- **Multi-Tenancy isolation**: Every query includes an organization filter (e.g. `organization_id = '{organization_id}'`). Results are strictly filtered to the active tenant.
+- **Document Mapping**: Database ORM models are converted to indexable payloads via `app/infrastructure/search/document_mapper.py` before transfer.
+
+### Background Indexing
+
+To keep API responses fast, Meilisearch index updates are processed asynchronously by RQ workers.
+
+| Operation Trigger | Job Function | Action in Meilisearch |
+|-------------------|--------------|-----------------------|
+| Organization created | `index_organization_task` | Index new organization & owner membership |
+| Organization renamed | `index_organization_task` | Re-index organization name |
+| Member added | `index_member_task` | Index member document (Membership + User) |
+| Member role changed | `index_member_task` | Re-index modified membership role |
+| Member removed | `delete_member_task` | Remove member from index |
+| Ownership transferred | `index_member_task` (x2) | Re-index new owner and new admin role |
+| File uploaded | `index_file_task` | Index file metadata |
+| File deleted | `delete_file_task` | Remove file metadata from index |
+| Audit event created | `index_audit_log_task` | Index audit log entry |
+
+### Cache-Aside Integration
+
+Search queries are cached inside Redis to speed up repeated queries:
+- Popular queries are stored using the pattern `search:{org_id}:{index}:{query}:{limit}:{offset}:{sort}` with a short TTL (5 minutes).
+- Whenever a document is indexed, updated, or deleted under an organization, all search caches matching the pattern `search:{org_id}:*` are instantly invalidated.
+
+### Failure Handling
+
+If a background task fails to index a document:
+1. The task raises an exception, allowing the standard RQ worker retry strategy (`RQ_RETRY_MAX`, default 3) to execute.
+2. If all retries are exhausted, the worker catches the failure, logs the issue, and writes detailed metadata (including the failed payload) to the `search_index_failures` database table.
+3. The worker then continues executing remaining jobs in the queue normally without crashing.
+
+### Health Check
+
+The `/health` endpoint is extended to return search connectivity:
+- Healthy: `"search": "connected"`, `"status": "ok"`
+- Unhealthy: `"search": "unavailable"`, `"status": "degraded"` (returns HTTP 200)
+
 ## Project Structure
 
 ```
@@ -655,24 +743,27 @@ alembic downgrade -1
 - Configurable retry strategy
 - Comprehensive test coverage
 
-### v2.2.0 - Email Notifications (Planned)
-- Full-text search
-- Elasticsearch integration
-- Advanced filtering
-- Search analytics
+### v2.2.0 - Meilisearch Cloud Integration & Search Infrastructure ✅
+- Full-text search on Meilisearch Cloud
+- Optional search infrastructure design with graceful degradation
+- Light circuit breaker to prevent blocking calls
+- Automatic index setup and settings updates on startup
+- Async background indexing tasks with retries and DB failure logging
+- Caching integration with Redis (Cache-Aside) and selective cache invalidation
+- Strict multi-tenancy boundaries enforcement via organization scoping
+- Streamlit Search Dashboard displaying global and index-scoped matching results
+- Mock-based unit testing covering failovers, breaker flow, caching, and APIs
 
-### v2.3.0 - Observability Stack (Planned)
+### v2.3.0 - Email Notifications (Planned)
+- SMTP client / service provider integration
+- Transactional email templates
+- Asynchronous email queueing and delivery monitoring
+
+### v2.4.0 - Observability Stack (Planned)
 - Prometheus metrics
 - Grafana dashboards
 - Structured logging
 - Error tracking (Sentry)
-
-### v2.4.0 - Security Hardening (Planned)
-- 2FA authentication
-- OAuth/OIDC integration
-- API rate limiting
-- Input validation enhancements
-- Security headers
 
 ### v3.0.0 - Production Deployment (Planned)
 - Docker containerization
@@ -690,8 +781,9 @@ alembic downgrade -1
 
 ## Current Version
 
-**v2.1.0** - Background Jobs & Task Processing
+**v2.2.0** - Meilisearch Cloud Integration & Search Infrastructure
 
 ## License
 
 MIT License - See LICENSE file for details.
+

@@ -1,0 +1,1 @@
+# Search module package initialization

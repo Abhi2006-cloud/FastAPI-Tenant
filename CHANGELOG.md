@@ -5,6 +5,25 @@ All notable changes to AI Workspace SaaS will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.0] - 2026-08-01
+
+### Added
+- Meilisearch Cloud integration layer (`app/infrastructure/search/`) with `SearchClient`
+- Lightweight per-process in-memory Circuit Breaker to prevent excessive failed calls during outages
+- Automatic index creation and settings setup (`organizations`, `members`, `files`, `audit_logs`) on startup
+- Database table `search_index_failures` and Alembic migration to record failures when background retries exhaust
+- Caching integration for search queries using CacheService (Cache-Aside pattern)
+- Automatic search cache invalidation pattern matching `search:{org_id}:*` on document updates
+- Multi-tenancy filtering to isolate search results securely by organization boundaries
+- Global search endpoint (`GET /search`) and index-scoped endpoints under `app/modules/search/`
+- Streamlit Search Dashboard page (`frontend/pages/Search.py`) with full-text search, highlighting, pagination, sorting, and degraded warning
+- Extensive unit tests covering client connection, circuit breaker, index manager, background failures, caching, and graceful degradation
+
+### Changed
+- Extended `/health` API endpoint to report search connection status (health degrades to `status: degraded` but returns HTTP 200)
+- Enqueued background indexing jobs on organization creation/rename, member addition/role-change/removal, file upload/deletion, and audit log persistence
+- Expose PATCH `/organizations/{org_id}` route for organization renaming
+
 ## [2.1.0] - 2026-07-31
 
 ### Added

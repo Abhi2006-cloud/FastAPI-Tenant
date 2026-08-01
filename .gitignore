@@ -27,6 +27,8 @@ htmlcov/
 *.db
 *.sqlite
 *.sqlite3
+*.rdb
+
 
 # File uploads
 uploads/

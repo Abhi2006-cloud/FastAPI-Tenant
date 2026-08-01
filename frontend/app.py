@@ -20,6 +20,7 @@ from frontend.utils.constants import (
     PAGE_PROFILE,
     PAGE_AUDIT_LOGS,
     PAGE_BACKGROUND_JOBS,
+    PAGE_SEARCH,
 )
 from frontend.utils.session import get_current_page, set_current_page, is_authenticated
 
@@ -56,6 +57,10 @@ def render_page(page_name: str):
     elif page_name == PAGE_BACKGROUND_JOBS:
         from frontend.pages.Background_Jobs import render as render_background_jobs
         render_background_jobs()
+    elif page_name == PAGE_SEARCH:
+        from frontend.pages.Search import render as render_search
+        render_search()
+
     else:
         st.error(f"Unknown page: {page_name}")
         set_current_page(PAGE_DASHBOARD)

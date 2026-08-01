@@ -21,6 +21,8 @@ from app.modules.memberships.service import MembershipService
 from app.modules.organizations.models import Organization
 from app.modules.organizations.repository import OrganizationRepository
 from app.modules.organizations.schemas import OrganizationCreate, OrganizationResponse
+from app.services.job_service import JobService
+from app.jobs.tasks import index_organization_task, index_member_task
 
 
 class OrganizationService:
@@ -29,12 +31,13 @@ class OrganizationService:
         self.repo = OrganizationRepository(db)
         self.membership_service = MembershipService(db)
         self.cache = CacheService()
+        self.job_service = JobService()
 
     async def create_organization(
         self, owner_id: UUID, data: OrganizationCreate
     ) -> Organization:
         organization = await self.repo.create(name=data.name, owner_id=owner_id)
-        await self.membership_service.add_member(
+        owner_membership = await self.membership_service.add_member(
             user_id=owner_id,
             organization_id=organization.id,
             role=MembershipRole.OWNER,
@@ -47,10 +50,52 @@ class OrganizationService:
             resource_id=organization.id,
             metadata={"name": data.name},
         )
+        
+        # Enqueue search indexing tasks for the organization and owner membership
+        self.job_service.enqueue(index_organization_task, str(organization.id))
+        self.job_service.enqueue(index_member_task, str(owner_membership.id))
+
         # Invalidate user's organization list cache
         cache_key = CacheKeyBuilder.user(str(owner_id))
         await self.cache.delete(cache_key)
         return organization
+
+    async def rename_organization(
+        self, requester_user_id: UUID, organization_id: UUID, new_name: str
+    ) -> Organization:
+        """Rename an organization, log audit event, enqueue search indexing, invalidate cache."""
+        # Enforce OWNER or ADMIN role
+        await self.membership_service.ensure_roles(
+            requester_user_id, organization_id, {MembershipRole.OWNER, MembershipRole.ADMIN}
+        )
+        
+        org = await self.repo.get_by_id(organization_id)
+        if org is None:
+            raise NotFoundError("Organization not found")
+            
+        old_name = org.name
+        org.name = new_name
+        
+        await AuditLogService(self.db).create_event(
+            organization_id=organization_id,
+            actor_user_id=requester_user_id,
+            action=AuditAction.ORGANIZATION_RENAMED,
+            resource_type=RESOURCE_ORGANIZATION,
+            resource_id=organization_id,
+            metadata={"old_name": old_name, "new_name": new_name},
+        )
+        
+        # Enqueue search indexing task for organization update
+        self.job_service.enqueue(index_organization_task, str(organization_id))
+        
+        # Invalidate caches
+        user_cache_key = CacheKeyBuilder.user(str(requester_user_id))
+        org_cache_key = CacheKeyBuilder.organization(str(organization_id))
+        await self.cache.delete(user_cache_key)
+        await self.cache.delete(org_cache_key)
+        
+        return org
+
 
     async def list_user_organizations(self, user_id: UUID) -> list[Organization]:
         cache_key = CacheKeyBuilder.user(str(user_id))

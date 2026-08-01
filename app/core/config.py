@@ -51,6 +51,11 @@ class Settings(BaseSettings):
     rq_result_ttl: int = 86400
     rq_failure_ttl: int = 604800
 
+    # Meilisearch
+    meilisearch_url: str | None = None
+    meilisearch_api_key: str | None = None
+    meilisearch_index_prefix: str = "ai_workspace"
+
     @property
     def rq_retry_interval_list(self) -> list[int]:
         """Parse comma-separated retry intervals into seconds."""

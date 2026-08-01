@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.core.exceptions import BadRequestError, ForbiddenError, NotFoundError
-from app.jobs.tasks import process_file_upload_task
+from app.jobs.tasks import process_file_upload_task, index_file_task, delete_file_task
 from app.modules.audit.events import RESOURCE_FILE, AuditAction
 from app.modules.audit.service import AuditLogService
 from app.modules.files.models import FileRecord
@@ -72,6 +72,9 @@ class FileService:
                 str(created.id),
                 str(organization_id),
             )
+        
+        # Enqueue search indexing task
+        self.job_service.enqueue(index_file_task, str(created.id))
         await AuditLogService(self.db).create_event(
             organization_id=organization_id,
             actor_user_id=user_id,
@@ -155,6 +158,9 @@ class FileService:
         
         # Delete database record
         await self.repo.delete(file_id)
+        
+        # Enqueue search deletion task
+        self.job_service.enqueue(delete_file_task, str(file_id), str(organization_id))
         await AuditLogService(self.db).create_event(
             organization_id=organization_id,
             actor_user_id=user_id,

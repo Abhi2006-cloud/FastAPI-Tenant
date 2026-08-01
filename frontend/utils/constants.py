@@ -17,6 +17,8 @@ PAGE_FILES = "Files"
 PAGE_PROFILE = "Profile"
 PAGE_AUDIT_LOGS = "Audit Logs"
 PAGE_BACKGROUND_JOBS = "Background Jobs"
+PAGE_SEARCH = "Search"
+
 
 # Session state keys
 SESSION_ACCESS_TOKEN = "access_token"

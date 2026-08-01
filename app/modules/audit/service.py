@@ -48,7 +48,7 @@ class AuditLogService:
         so audit logs remain visible without a worker or separate DB connection.
         """
         if get_settings().job_sync_mode:
-            await self.persist_event(
+            log = await self.persist_event(
                 organization_id=organization_id,
                 actor_user_id=actor_user_id,
                 action=action,
@@ -56,7 +56,11 @@ class AuditLogService:
                 resource_id=resource_id,
                 metadata=metadata,
             )
+            # Enqueue search indexing immediately
+            from app.jobs.search_tasks import index_audit_log_task
+            self.job_service.enqueue(index_audit_log_task, str(log.id))
             return "sync-mode"
+
 
         return self.job_service.enqueue(
             record_audit_event_task,

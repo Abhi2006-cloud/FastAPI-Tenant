@@ -11,6 +11,7 @@ from frontend.utils.constants import (
     PAGE_PROFILE,
     PAGE_AUDIT_LOGS,
     PAGE_BACKGROUND_JOBS,
+    PAGE_SEARCH,
 )
 from frontend.utils.session import (
     get_user,
@@ -80,8 +81,10 @@ def render_sidebar():
             (PAGE_FILES, "📁 Files"),
             (PAGE_AUDIT_LOGS, "📋 Audit Logs"),
             (PAGE_BACKGROUND_JOBS, "⚙️ Background Jobs"),
+            (PAGE_SEARCH, "🔍 Search Dashboard"),
             (PAGE_PROFILE, "👤 Profile"),
         ]
+
         
         for page_key, page_label in pages:
             if st.button(page_label, use_container_width=True, key=f"nav_{page_key}"):

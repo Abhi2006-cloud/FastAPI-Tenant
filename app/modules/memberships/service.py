@@ -21,6 +21,9 @@ from app.modules.audit.events import RESOURCE_MEMBERSHIP, AuditAction
 from app.modules.audit.service import AuditLogService
 from app.modules.memberships.models import Membership, MembershipRole
 from app.modules.memberships.repository import MembershipRepository
+from app.services.job_service import JobService
+from app.jobs.tasks import index_member_task, delete_member_task
+
 
 
 class MembershipService:
@@ -28,6 +31,8 @@ class MembershipService:
         self.db = db
         self.repo = MembershipRepository(db)
         self.cache = CacheService()
+        self.job_service = JobService()
+
 
     async def ensure_member(
         self, user_id: UUID, organization_id: UUID
@@ -61,6 +66,8 @@ class MembershipService:
         if existing is not None:
             raise ConflictError("User is already a member of this organization")
         membership = await self.repo.create(user_id, organization_id, role)
+        # Enqueue background search indexing
+        self.job_service.enqueue(index_member_task, str(membership.id))
         # Invalidate user's organization list cache (invitation accepted)
         cache_key = CacheKeyBuilder.user(str(user_id))
         await self.cache.delete(cache_key)
@@ -157,6 +164,8 @@ class MembershipService:
                 "new_role": new_role.value,
             },
         )
+        # Enqueue background search indexing for role change
+        self.job_service.enqueue(index_member_task, str(membership_id))
         # Invalidate target user's organization list cache
         cache_key = CacheKeyBuilder.user(str(target_membership.user_id))
         await self.cache.delete(cache_key)
@@ -210,6 +219,8 @@ class MembershipService:
 
         # Delete membership
         await self.repo.delete(membership_id)
+        # Enqueue background search deletion
+        self.job_service.enqueue(delete_member_task, str(membership_id), str(organization_id))
         await AuditLogService(self.db).create_event(
             organization_id=organization_id,
             actor_user_id=requester_user_id,
@@ -285,6 +296,9 @@ class MembershipService:
 
         # Target -> owner
         await self.repo.update_role(target_membership.id, MembershipRole.OWNER)
+        # Enqueue background search indexing updates for both memberships
+        self.job_service.enqueue(index_member_task, str(current_owner_membership.id))
+        self.job_service.enqueue(index_member_task, str(target_membership.id))
         await AuditLogService(self.db).create_event(
             organization_id=organization_id,
             actor_user_id=requester_user_id,

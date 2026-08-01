@@ -11,3 +11,5 @@ from app.modules.files.models import FileRecord  # noqa: F401
 from app.modules.invitations.models import Invitation  # noqa: F401
 from app.modules.memberships.models import Membership  # noqa: F401
 from app.modules.organizations.models import Organization  # noqa: F401
+from app.modules.search.models import SearchIndexFailure  # noqa: F401
+

@@ -21,3 +21,9 @@ class OrganizationResponse(BaseModel):
     name: str
     owner_id: UUID
     created_at: datetime
+
+
+class OrganizationUpdate(BaseModel):
+    """PATCH /organizations/{org_id} body."""
+    name: str = Field(min_length=1, max_length=255)
+

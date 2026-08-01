@@ -31,6 +31,7 @@ from app.modules.invitations.router import router as invitations_router
 from app.modules.jobs.router import router as jobs_router
 from app.modules.memberships.router import router as memberships_router
 from app.modules.organizations.router import router as organizations_router
+from app.modules.search.router import router as search_router
 
 settings = get_settings()
 
@@ -42,13 +43,32 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     try:
         await RedisClient.get_client()
     except Exception as e:
-        # Fail fast if Redis is unavailable
-        raise RuntimeError(f"Failed to connect to Redis: {e}")
+        import logging
+        logging.getLogger(__name__).warning("Failed to connect to Redis during startup: %s. Continuing...", str(e))
+
     
+    # Startup: Connect and initialize Meilisearch
+    from app.infrastructure.search.client import search_client
+    from app.infrastructure.search.index_manager import IndexManager
+    try:
+        connected = await search_client.initialize()
+        if connected:
+            await IndexManager.initialize_indexes()
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).warning("Failed to initialize Meilisearch on startup: %s. Continuing...", str(e))
+
     yield
     
     # Shutdown: Close Redis connection
     await RedisClient.close()
+    
+    # Shutdown: Close Meilisearch connection
+    try:
+        from app.infrastructure.search.client import search_client
+        await search_client.close()
+    except Exception:
+        pass
 
 
 app = FastAPI(
@@ -77,12 +97,16 @@ app.include_router(files_router)
 app.include_router(memberships_router)
 app.include_router(audit_router)
 app.include_router(jobs_router)
+app.include_router(search_router)
+
+
 
 
 @app.get("/health")
 async def health() -> dict:
-    """Liveness check with database, Redis, worker, and queue status."""
+    """Liveness check with database, Redis, worker, search, and queue status."""
     from app.services.job_service import JobService
+    from app.infrastructure.search.health import check_search_health
 
     redis_status = "connected" if await RedisClient.health_check() else "disconnected"
     
@@ -101,6 +125,8 @@ async def health() -> dict:
     except Exception:
         db_status = "disconnected"
 
+    # Check Meilisearch health status
+    search_status = await check_search_health()
 
     worker_stats = {"count": 0, "status": "unknown", "workers": []}
     queue_stats: dict = {}
@@ -111,11 +137,20 @@ async def health() -> dict:
         except Exception:
             worker_stats = {"count": 0, "status": "unknown", "workers": []}
     
+    is_ok = (
+        db_status == "connected" 
+        and redis_status == "connected" 
+        and search_status == "connected"
+    )
+    status_str = "ok" if is_ok else "degraded"
+    
     return {
-        "status": "ok",
+        "status": status_str,
         "database": db_status,
         "redis": redis_status,
+        "search": search_status,
         "worker": worker_stats["status"],
         "workers": worker_stats,
         "queues": queue_stats,
     }
+

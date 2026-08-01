@@ -15,8 +15,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
 from app.core.dependencies import get_current_user
 from app.modules.auth.models import User
-from app.modules.organizations.schemas import OrganizationCreate, OrganizationResponse
+from app.modules.organizations.schemas import OrganizationCreate, OrganizationResponse, OrganizationUpdate
 from app.modules.organizations.service import OrganizationService
+from uuid import UUID
 
 router = APIRouter(prefix="/organizations", tags=["organizations"])
 
@@ -38,3 +39,19 @@ async def list_my_organizations(
 ) -> list[OrganizationResponse]:
     orgs = await OrganizationService(db).list_user_organizations(current_user.id)
     return [OrganizationResponse.model_validate(org) for org in orgs]
+
+
+@router.patch("/{org_id}", response_model=OrganizationResponse)
+async def rename_organization(
+    org_id: UUID,
+    data: OrganizationUpdate,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> OrganizationResponse:
+    org = await OrganizationService(db).rename_organization(
+        requester_user_id=current_user.id,
+        organization_id=org_id,
+        new_name=data.name,
+    )
+    return OrganizationResponse.model_validate(org)
+

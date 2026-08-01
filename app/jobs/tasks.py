@@ -14,16 +14,28 @@ from uuid import UUID
 from app.core.config import get_settings
 from app.core.database import async_session_factory
 from app.jobs.async_runner import run_async
+
+# Ensure all SQLAlchemy ORM models are registered in worker process
+from app.modules.auth.models import User  # noqa: F401
+from app.modules.organizations.models import Organization  # noqa: F401
+from app.modules.memberships.models import Membership  # noqa: F401
+from app.modules.files.models import FileRecord  # noqa: F401
+from app.modules.audit.models import AuditLog  # noqa: F401
+from app.modules.invitations.models import Invitation  # noqa: F401
+from app.modules.search.models import SearchIndexFailure  # noqa: F401
+
 from app.modules.audit.events import AuditAction
 from app.modules.audit.worker import persist_audit_event
 from app.modules.files.repository import FileRepository
 from app.modules.files.storage import StorageService
+
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
 
 
 async def _persist_audit_event(
+
     organization_id: str,
     actor_user_id: str | None,
     action: str,
@@ -71,6 +83,12 @@ def record_audit_event_task(
             )
         )
         logger.info("Job completed: record_audit_event audit_log_id=%s", result["audit_log_id"])
+        
+        # Enqueue search indexing task for the persisted audit log
+        from app.services.job_service import JobService
+        from app.jobs.search_tasks import index_audit_log_task
+        JobService().enqueue(index_audit_log_task, result["audit_log_id"])
+        
         return result
     except Exception as exc:
         logger.exception("Job failed: record_audit_event: %s", exc)
@@ -145,3 +163,16 @@ def process_invitation_task(
     except Exception as exc:
         logger.exception("Job failed: process_invitation: %s", exc)
         raise
+
+
+# Export search tasks so they are discoverable under app.jobs.tasks
+from app.jobs.search_tasks import (
+    index_organization_task,
+    delete_organization_task,
+    index_member_task,
+    delete_member_task,
+    index_file_task,
+    delete_file_task,
+    index_audit_log_task
+)
+
