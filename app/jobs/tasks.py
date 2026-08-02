@@ -23,6 +23,9 @@ from app.modules.files.models import FileRecord  # noqa: F401
 from app.modules.audit.models import AuditLog  # noqa: F401
 from app.modules.invitations.models import Invitation  # noqa: F401
 from app.modules.search.models import SearchIndexFailure  # noqa: F401
+from app.modules.email.models import EmailLog  # noqa: F401
+from app.jobs.email_tasks import process_email_job_task  # noqa: F401
+
 
 from app.modules.audit.events import AuditAction
 from app.modules.audit.worker import persist_audit_event

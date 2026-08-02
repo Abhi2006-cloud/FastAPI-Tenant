@@ -12,11 +12,18 @@ class InvitationRepository:
     def __init__(self, db: AsyncSession) -> None:
         self.db = db
 
+    async def get_by_id(self, invitation_id: UUID) -> Invitation | None:
+        result = await self.db.execute(
+            select(Invitation).where(Invitation.id == invitation_id)
+        )
+        return result.scalar_one_or_none()
+
     async def get_by_token(self, token: str) -> Invitation | None:
         result = await self.db.execute(
             select(Invitation).where(Invitation.token == token)
         )
         return result.scalar_one_or_none()
+
 
     async def get_pending_for_org_email(
         self, organization_id: UUID, email: str

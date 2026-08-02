@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+
+{% block title %}Welcome to {{ company_name | default('AI Workspace') }}{% endblock %}
+
+{% block content %}
+<p>Hello {{ user_name | default(recipient_email) }},</p>
+<p>Welcome to <strong>{{ company_name | default('AI Workspace') }}</strong>! Your account has been created successfully.</p>
+
+<p>You can now start collaborating with your team, managing files, and configuring integrations.</p>
+
+<div class="button-container">
+  <a href="{{ dashboard_url }}" class="btn-primary" target="_blank">Go to Dashboard</a>
+</div>
+
+<p>If you have any questions, feel free to reach out to our support team anytime.</p>
+{% endblock %}

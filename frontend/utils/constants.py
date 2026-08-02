@@ -18,6 +18,8 @@ PAGE_PROFILE = "Profile"
 PAGE_AUDIT_LOGS = "Audit Logs"
 PAGE_BACKGROUND_JOBS = "Background Jobs"
 PAGE_SEARCH = "Search"
+PAGE_EMAIL = "Email"
+
 
 
 # Session state keys

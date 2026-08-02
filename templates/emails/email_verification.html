@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+
+{% block title %}Verify Your Email Address{% endblock %}
+
+{% block content %}
+<p>Hello,</p>
+<p>Please verify your email address to complete setting up your <strong>{{ company_name | default('AI Workspace') }}</strong> account.</p>
+
+<div class="button-container">
+  <a href="{{ verify_url }}" class="btn-primary" target="_blank">Verify Email Address</a>
+</div>
+
+<p style="font-size: 13px; color: #94a3b8;">If you did not create an account, no further action is required.</p>
+{% endblock %}

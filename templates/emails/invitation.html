@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+
+{% block title %}You've been invited to join {{ organization_name }}{% endblock %}
+
+{% block content %}
+<p>Hello,</p>
+<p><strong>{{ inviter_name | default('An administrator') }}</strong> has invited you to join the <strong>{{ organization_name }}</strong> workspace on {{ company_name | default('AI Workspace') }}.</p>
+
+<p>Click the button below to accept your invitation and access the workspace:</p>
+
+<div class="button-container">
+  <a href="{{ join_url }}" class="btn-primary" target="_blank">Join Workspace</a>
+</div>
+
+<p style="font-size: 13px; color: #64748b;">Or copy and paste this URL into your browser:<br>
+<a href="{{ join_url }}" style="color: #4f46e5; word-break: break-all;">{{ join_url }}</a></p>
+
+<p style="font-size: 13px; color: #94a3b8; margin-top: 24px;">This invitation will expire in {{ expire_hours | default(72) }} hours. If you were not expecting this invitation, you can safely ignore this email.</p>
+{% endblock %}

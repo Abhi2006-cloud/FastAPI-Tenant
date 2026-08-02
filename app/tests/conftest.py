@@ -4,6 +4,8 @@ from unittest.mock import AsyncMock, patch
 
 # Must set before importing app modules that cache settings
 os.environ["JOB_SYNC_MODE"] = "true"
+os.environ["EXPOSE_INVITATION_TOKENS"] = "true"
+
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -53,17 +55,39 @@ def mock_redis_for_tests():
             "app.services.job_service.JobService.get_queue_stats",
             return_value=mock_queue_stats,
         ),
+        patch("app.infrastructure.search.service.SearchService.index_document", new=AsyncMock(return_value={"status": "ok"})),
+        patch("app.infrastructure.search.service.SearchService.delete_document", new=AsyncMock(return_value={"status": "ok"})),
+        patch("app.infrastructure.search.client.SearchClient.initialize", new=AsyncMock(return_value=None)),
+        patch("app.infrastructure.search.client.SearchClient.request", new=AsyncMock(return_value={"status": "ok"})),
+        patch("app.jobs.search_tasks.search_service.index_document", new=AsyncMock(return_value={"status": "ok"})),
+        patch("app.jobs.search_tasks.search_service.delete_document", new=AsyncMock(return_value={"status": "ok"})),
+        patch("app.infrastructure.search.health.check_search_health", new=AsyncMock(return_value="connected")),
     ):
         yield mock_client
 
 
 
+
+
+
+from sqlalchemy.pool import StaticPool
+
+
 @pytest.fixture
 async def db_engine():
-    engine = create_async_engine(TEST_DATABASE_URL, echo=False)
+    engine = create_async_engine(TEST_DATABASE_URL, poolclass=StaticPool, echo=False)
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
-    yield engine
+
+    session_factory = async_sessionmaker(engine, expire_on_commit=False)
+    with (
+        patch("app.core.database.async_session_factory", session_factory),
+        patch("app.jobs.search_tasks.async_session_factory", session_factory),
+        patch("app.jobs.email_tasks.async_session_factory", session_factory),
+        patch("app.jobs.tasks.async_session_factory", session_factory),
+    ):
+        yield engine
+
     await engine.dispose()
 
 
@@ -95,3 +119,7 @@ async def client(db_engine) -> AsyncGenerator[AsyncClient, None]:
         yield ac
 
     app.dependency_overrides.clear()
+
+
+
+

@@ -5,7 +5,36 @@ All notable changes to AI Workspace SaaS will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.3.0] - 2026-08-02
+
+### Added
+- Configurable `EMAIL_MODE` (`development`, `production`, `console`) for flexible environment behavior
+- Graceful Development Mode fallback: invitations generate tokens and `invitation_url` cleanly for manual sharing without requiring domain verification
+- `invitation_url`, `delivery_status`, `delivery_mode`, and `message` fields added to `InvitationResponse` payload
+- Streamlit UI Development Mode warning banner and copyable invitation link input box on `frontend/pages/Invitations.py`
+- Streamlit Email Dashboard (`frontend/pages/Email.py`) displaying delivery mode metrics and operational status
+- Reusable Email Infrastructure (`app/infrastructure/email/`) with provider abstraction (`EmailProvider`)
+- `ConsoleProvider` for local development without API quota consumption (renders & logs HTML + Plain Text to console)
+- `ResendProvider` using HTTP API (`https://api.resend.com/emails`) for production delivery
+- Email Audit History database table `email_logs` and Alembic migration (`20260802_0005_add_email_logs.py`)
+- Dedicated Redis queue `email` (`QUEUE_EMAIL = "email"`) for background email delivery tasks
+- Payload-optimized background task `process_email_job_task(email_log_id)` with exponential backoff retries (30s, 2m, 10m, 30m, 1h)
+- HTML & Plain Text Jinja2 template rendering (`templates/emails/base.html`, `invitation.html`, `welcome.html`, `password_reset.html`, `email_verification.html`)
+- Redis-based invitation rate limiting (default 20 invitations per organization per hour)
+- Invitation idempotency (existing pending invite returned and re-sent instead of creating duplicate DB rows)
+- Resend invitation endpoint `POST /invitations/{invitation_id}/resend`
+- 60-second in-memory provider health caching for `GET /health` endpoint
+- Streamlit Email Operations Dashboard (`frontend/pages/Email.py`) with provider metrics, audit logs, test email sender, template previewer, and manual retries
+- Link-based automatic invitation acceptance in Streamlit (`http://localhost:8501/invitations?token=<token>`)
+- Comprehensive offline test suite (`app/tests/test_email.py`) covering providers, template engine, rate limits, resend flow, and health integration
+
+### Changed
+- `InvitationResponse` hides raw token by default in production unless `EXPOSE_INVITATION_TOKENS=true`
+- Extended `GET /health` API endpoint to report email provider status (`console`, `connected`, `misconfigured`, `degraded`)
+- Updated worker script (`python -m app.jobs.worker`) to listen on `default, high, low, email` queues
+
 ## [2.2.0] - 2026-08-01
+
 
 ### Added
 - Meilisearch Cloud integration layer (`app/infrastructure/search/`) with `SearchClient`

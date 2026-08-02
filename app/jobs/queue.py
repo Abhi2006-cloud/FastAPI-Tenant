@@ -13,14 +13,16 @@ from app.core.rq import get_queue
 QUEUE_DEFAULT = "default"
 QUEUE_HIGH = "high"
 QUEUE_LOW = "low"
+QUEUE_EMAIL = "email"
 
-QUEUE_NAMES = (QUEUE_DEFAULT, QUEUE_HIGH, QUEUE_LOW)
+QUEUE_NAMES = (QUEUE_DEFAULT, QUEUE_HIGH, QUEUE_LOW, QUEUE_EMAIL)
 
 
 class QueuePriority(str, Enum):
     DEFAULT = QUEUE_DEFAULT
     HIGH = QUEUE_HIGH
     LOW = QUEUE_LOW
+    EMAIL = QUEUE_EMAIL
 
 
 def get_default_queue() -> Queue:
@@ -33,6 +35,11 @@ def get_high_priority_queue() -> Queue:
 
 def get_low_priority_queue() -> Queue:
     return get_queue(QUEUE_LOW)
+
+
+def get_email_queue() -> Queue:
+    return get_queue(QUEUE_EMAIL)
+
 
 
 def get_queue_by_name(name: str) -> Queue:

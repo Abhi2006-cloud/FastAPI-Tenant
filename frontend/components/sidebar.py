@@ -12,7 +12,9 @@ from frontend.utils.constants import (
     PAGE_AUDIT_LOGS,
     PAGE_BACKGROUND_JOBS,
     PAGE_SEARCH,
+    PAGE_EMAIL,
 )
+
 from frontend.utils.session import (
     get_user,
     get_organization_id,
@@ -82,8 +84,10 @@ def render_sidebar():
             (PAGE_AUDIT_LOGS, "📋 Audit Logs"),
             (PAGE_BACKGROUND_JOBS, "⚙️ Background Jobs"),
             (PAGE_SEARCH, "🔍 Search Dashboard"),
+            (PAGE_EMAIL, "📧 Email Operations"),
             (PAGE_PROFILE, "👤 Profile"),
         ]
+
 
         
         for page_key, page_label in pages:

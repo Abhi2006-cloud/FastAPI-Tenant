@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}{{ subject | default('Notification') }}{% endblock %}</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+      background-color: #f4f6f8;
+      color: #1a202c;
+      margin: 0;
+      padding: 0;
+      -webkit-font-smoothing: antialiased;
+    }
+    .wrapper {
+      width: 100%;
+      background-color: #f4f6f8;
+      padding: 40px 0;
+    }
+    .main {
+      max-width: 580px;
+      margin: 0 auto;
+      background-color: #ffffff;
+      border-radius: 8px;
+      overflow: hidden;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+    }
+    .header {
+      background: linear-gradient(135deg, #4f46e5 0%, #3b82f6 100%);
+      padding: 24px;
+      text-align: center;
+    }
+    .header h1 {
+      color: #ffffff;
+      margin: 0;
+      font-size: 22px;
+      font-weight: 700;
+      letter-spacing: -0.5px;
+    }
+    .content {
+      padding: 32px 28px;
+      line-height: 1.6;
+      font-size: 15px;
+    }
+    .button-container {
+      margin: 28px 0;
+      text-align: center;
+    }
+    .btn-primary {
+      display: inline-block;
+      background-color: #4f46e5;
+      color: #ffffff !important;
+      font-weight: 600;
+      text-decoration: none;
+      padding: 12px 28px;
+      border-radius: 6px;
+      font-size: 15px;
+      transition: background-color 0.2s ease;
+    }
+    .btn-primary:hover {
+      background-color: #4338ca;
+    }
+    .footer {
+      background-color: #f8fafc;
+      padding: 20px 28px;
+      text-align: center;
+      font-size: 12px;
+      color: #64748b;
+      border-top: 1px solid #e2e8f0;
+    }
+    .footer a {
+      color: #64748b;
+      text-decoration: underline;
+    }
+  </style>
+</head>
+<body>
+  <div class="wrapper">
+    <div class="main">
+      <div class="header">
+        <h1>{{ company_name | default('AI Workspace') }}</h1>
+      </div>
+      <div class="content">
+        {% block content %}{% endblock %}
+      </div>
+      <div class="footer">
+        <p>&copy; {{ company_name | default('AI Workspace') }}. All rights reserved.</p>
+        <p>If you have questions, contact <a href="mailto:{{ support_email | default('support@example.com') }}">{{ support_email | default('support@example.com') }}</a>.</p>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

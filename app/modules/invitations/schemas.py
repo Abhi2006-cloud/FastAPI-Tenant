@@ -15,16 +15,30 @@ class InvitationCreate(BaseModel):
 
 
 class InvitationResponse(BaseModel):
-    """Includes token so client can share it (V1 does not send email)."""
+    """Invitation response model. Includes token and invitation URL in Development Mode."""
 
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
     email: EmailStr
     organization_id: UUID
-    token: str
+    token: str | None = None
+    invitation_url: str | None = None
     status: InvitationStatus
+    delivery_status: str | None = Field(
+        default="manual_sharing_required",
+        description="Delivery status: 'email_sent', 'manual_sharing_required', or 'console_logged'",
+    )
+    delivery_mode: str | None = Field(
+        default="development",
+        description="Active delivery mode: 'production', 'development', or 'console'",
+    )
+    message: str | None = Field(
+        default=None,
+        description="User-facing guidance regarding invitation delivery",
+    )
     expires_at: datetime
+
 
 
 class InvitationAccept(BaseModel):

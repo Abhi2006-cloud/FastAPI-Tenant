@@ -21,6 +21,7 @@ from frontend.utils.constants import (
     PAGE_AUDIT_LOGS,
     PAGE_BACKGROUND_JOBS,
     PAGE_SEARCH,
+    PAGE_EMAIL,
 )
 from frontend.utils.session import get_current_page, set_current_page, is_authenticated
 
@@ -60,6 +61,10 @@ def render_page(page_name: str):
     elif page_name == PAGE_SEARCH:
         from frontend.pages.Search import render as render_search
         render_search()
+    elif page_name == PAGE_EMAIL:
+        from frontend.pages.Email import render as render_email
+        render_email()
+
 
     else:
         st.error(f"Unknown page: {page_name}")

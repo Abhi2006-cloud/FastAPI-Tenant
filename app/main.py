@@ -26,12 +26,14 @@ from app.core.redis import RedisClient
 from app.middleware.tenant import TenantContextMiddleware
 from app.modules.audit.router import router as audit_router
 from app.modules.auth.router import router as auth_router
+from app.modules.email.router import router as email_router
 from app.modules.files.router import router as files_router
 from app.modules.invitations.router import router as invitations_router
 from app.modules.jobs.router import router as jobs_router
 from app.modules.memberships.router import router as memberships_router
 from app.modules.organizations.router import router as organizations_router
 from app.modules.search.router import router as search_router
+
 
 settings = get_settings()
 
@@ -98,15 +100,17 @@ app.include_router(memberships_router)
 app.include_router(audit_router)
 app.include_router(jobs_router)
 app.include_router(search_router)
+app.include_router(email_router)
 
 
 
 
 @app.get("/health")
 async def health() -> dict:
-    """Liveness check with database, Redis, worker, search, and queue status."""
+    """Liveness check with database, Redis, worker, search, email, and queue status."""
     from app.services.job_service import JobService
     from app.infrastructure.search.health import check_search_health
+    from app.infrastructure.email.health import check_email_health
 
     redis_status = "connected" if await RedisClient.health_check() else "disconnected"
     
@@ -128,6 +132,10 @@ async def health() -> dict:
     # Check Meilisearch health status
     search_status = await check_search_health()
 
+    # Check Email provider health status (cached 60s)
+    email_health = await check_email_health()
+    email_status = email_health.get("status", "unknown")
+
     worker_stats = {"count": 0, "status": "unknown", "workers": []}
     queue_stats: dict = {}
     if redis_status == "connected":
@@ -140,7 +148,8 @@ async def health() -> dict:
     is_ok = (
         db_status == "connected" 
         and redis_status == "connected" 
-        and search_status == "connected"
+        and search_status in ("connected", "ok")
+        and email_status in ("connected", "console")
     )
     status_str = "ok" if is_ok else "degraded"
     
@@ -149,8 +158,11 @@ async def health() -> dict:
         "database": db_status,
         "redis": redis_status,
         "search": search_status,
+        "email": email_status,
+        "email_detail": email_health,
         "worker": worker_stats["status"],
         "workers": worker_stats,
         "queues": queue_stats,
     }
+
 

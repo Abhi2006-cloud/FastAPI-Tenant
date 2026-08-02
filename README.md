@@ -754,10 +754,12 @@ alembic downgrade -1
 - Streamlit Search Dashboard displaying global and index-scoped matching results
 - Mock-based unit testing covering failovers, breaker flow, caching, and APIs
 
-### v2.3.0 - Email Notifications (Planned)
-- SMTP client / service provider integration
-- Transactional email templates
-- Asynchronous email queueing and delivery monitoring
+### v2.3.0 - Email Infrastructure & Development Mode Fallback ✅
+- Production email delivery via Resend API (`ResendProvider`)
+- Graceful Development Mode fallback (`EMAIL_MODE=development`) enabling local testing without domain verification
+- Automatic generation and API return of `invitation_url` and `token` for manual link sharing in development
+- Streamlit UI banners and copyable invitation links for instant workflow testing
+- Complete email audit logging, rate limiting, and dedicated background queue processing
 
 ### v2.4.0 - Observability Stack (Planned)
 - Prometheus metrics
@@ -781,7 +783,7 @@ alembic downgrade -1
 
 ## Current Version
 
-**v2.2.0** - Meilisearch Cloud Integration & Search Infrastructure
+**v2.3.0** - Email Infrastructure & Development Mode Fallback
 
 ## License
 
