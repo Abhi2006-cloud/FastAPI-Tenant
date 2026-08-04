@@ -137,3 +137,28 @@ async def _process_email_job_with_session(log_id: UUID, session: AsyncSession) -
             "error": error_msg,
             "retry_count": email_log.retry_count,
         }
+
+
+def new_device_login_email_task(user_id: str, recipient_email: str, context: dict) -> dict:
+    """RQ task entry point for enqueueing new device login notifications."""
+    logger.info("Executing new_device_login_email_task for user %s (%s)", user_id, recipient_email)
+    return run_async(_new_device_login_email(user_id, recipient_email, context))
+
+
+async def _new_device_login_email(user_id: str, recipient_email: str, context: dict) -> dict:
+    from app.infrastructure.email.service import EmailService
+    try:
+        async with async_session_factory() as db:
+            svc = EmailService(db)
+            log = await svc.queue_email(
+                recipient_email=recipient_email,
+                subject=f"New login detected on {context.get('device_name') or 'a new device'}",
+                template_name="new_device_login",
+                context=context,
+            )
+            return {"status": "queued", "email_log_id": str(log.id) if log else None}
+    except Exception as exc:
+        logger.warning("Failed to queue new device login email: %s", exc)
+        return {"status": "error", "error": str(exc)}
+
+

@@ -1,5 +1,9 @@
+"""Auth tests — updated for v2.4.0 (access + refresh token response)."""
+
 import pytest
 from httpx import AsyncClient
+
+from app.core.config import get_settings
 
 
 @pytest.mark.asyncio
@@ -21,6 +25,12 @@ async def test_register_and_login(client: AsyncClient) -> None:
     token_body = login_response.json()
     assert token_body["token_type"] == "bearer"
     assert token_body["access_token"]
+    # v2.4.0: refresh token and session_id must be present
+    assert token_body["refresh_token"]
+    assert token_body["session_id"]
+    # expires_in should match ACCESS_TOKEN_EXPIRE_MINUTES * 60
+    settings = get_settings()
+    assert token_body["expires_in"] == settings.access_token_expire_minutes * 60
 
 
 @pytest.mark.asyncio

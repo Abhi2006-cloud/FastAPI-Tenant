@@ -1,4 +1,4 @@
-"""Main Streamlit application entry point."""
+"""Main Streamlit application entry point for FastAPI Tenant app."""
 
 import sys
 from pathlib import Path
@@ -8,22 +8,26 @@ import streamlit as st
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from frontend.components.sidebar import render_sidebar
-from frontend.utils.constants import (
-    PAGE_LOGIN,
-    PAGE_REGISTER,
-    PAGE_DASHBOARD,
-    PAGE_ORGANIZATIONS,
-    PAGE_MEMBERS,
-    PAGE_INVITATIONS,
-    PAGE_FILES,
-    PAGE_PROFILE,
-    PAGE_AUDIT_LOGS,
-    PAGE_BACKGROUND_JOBS,
-    PAGE_SEARCH,
-    PAGE_EMAIL,
-)
+import importlib
+import frontend.utils.constants as constants
+importlib.reload(constants)
+
+PAGE_LOGIN = getattr(constants, "PAGE_LOGIN", "Login")
+PAGE_REGISTER = getattr(constants, "PAGE_REGISTER", "Register")
+PAGE_DASHBOARD = getattr(constants, "PAGE_DASHBOARD", "Dashboard")
+PAGE_ORGANIZATIONS = getattr(constants, "PAGE_ORGANIZATIONS", "Organizations")
+PAGE_MEMBERS = getattr(constants, "PAGE_MEMBERS", "Members")
+PAGE_INVITATIONS = getattr(constants, "PAGE_INVITATIONS", "Invitations")
+PAGE_FILES = getattr(constants, "PAGE_FILES", "Files")
+PAGE_PROFILE = getattr(constants, "PAGE_PROFILE", "Profile")
+PAGE_AUDIT_LOGS = getattr(constants, "PAGE_AUDIT_LOGS", "Audit Logs")
+PAGE_BACKGROUND_JOBS = getattr(constants, "PAGE_BACKGROUND_JOBS", "Background Jobs")
+PAGE_SEARCH = getattr(constants, "PAGE_SEARCH", "Search")
+PAGE_EMAIL = getattr(constants, "PAGE_EMAIL", "Email")
+PAGE_SESSIONS = getattr(constants, "PAGE_SESSIONS", "Sessions")
+
 from frontend.utils.session import get_current_page, set_current_page, is_authenticated
+
 
 
 def render_page(page_name: str):
@@ -64,6 +68,9 @@ def render_page(page_name: str):
     elif page_name == PAGE_EMAIL:
         from frontend.pages.Email import render as render_email
         render_email()
+    elif page_name == PAGE_SESSIONS:
+        from frontend.pages.Sessions import render as render_sessions
+        render_sessions()
 
 
     else:
@@ -91,6 +98,7 @@ def main():
     # Render current page
     current_page = get_current_page()
     render_page(current_page)
+
 
 
 if __name__ == "__main__":

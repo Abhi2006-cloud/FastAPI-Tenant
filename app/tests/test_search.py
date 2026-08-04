@@ -132,14 +132,16 @@ def test_circuit_breaker_flow():
 @pytest.mark.asyncio
 async def test_search_client_connection_success():
     client = search_client
-    
-    # Mock clean health response
     mock_resp = httpx.Response(200, json={"status": "available"})
-    with patch("httpx.AsyncClient.request", return_value=mock_resp) as mock_request:
+    with (
+        patch.object(client, "is_configured", return_value=True),
+        patch("httpx.AsyncClient.get", new_callable=AsyncMock, return_value=mock_resp),
+        patch("httpx.AsyncClient.request", new_callable=AsyncMock, return_value=mock_resp),
+    ):
         connected = await client.initialize()
         assert connected is True
         assert client.enabled is True
-        
+
         status_val = await client.health_status()
         assert status_val == "connected"
 
@@ -147,13 +149,14 @@ async def test_search_client_connection_success():
 @pytest.mark.asyncio
 async def test_search_client_connection_failure():
     client = search_client
-    
-    # Mock error response
-    with patch("httpx.AsyncClient.request", side_effect=httpx.ConnectError("Connection refused")):
+    with (
+        patch.object(client, "is_configured", return_value=True),
+        patch("httpx.AsyncClient.get", new_callable=AsyncMock, side_effect=httpx.ConnectError("Connection refused")),
+    ):
         connected = await client.initialize()
         assert connected is False
         assert client.enabled is False
-        
+
         status_val = await client.health_status()
         assert status_val == "unavailable"
 
@@ -164,9 +167,14 @@ async def test_search_client_requests_fail_when_circuit_open():
     client.enabled = True
     client.circuit_breaker.state = "OPEN"
     client.circuit_breaker.last_state_change = time.time()
-    
-    with pytest.raises(MeilisearchUnavailableException):
+
+    with (
+        patch.object(client, "is_configured", return_value=True),
+        pytest.raises(MeilisearchUnavailableException),
+    ):
         await client.request("GET", "/indexes")
+
+
 
 
 # ---------------------------------------------------------
@@ -241,9 +249,17 @@ async def test_search_service_tenant_filtering_and_caching(cache_service):
     service = SearchService()
     service.cache = cache_service
     
+    cache_store: dict = {}
+    async def mock_get(key): return cache_store.get(key)
+    async def mock_set(key, val, **kw): cache_store[key] = val
+    async def mock_delete_pattern(pat): cache_store.clear()
+    cache_service.get.side_effect = mock_get
+    cache_service.set.side_effect = mock_set
+    cache_service.delete_pattern.side_effect = mock_delete_pattern
+
     org_id = uuid4()
     mock_res = {"hits": [{"id": "doc-123", "organization_id": str(org_id), "file_name": "important.pdf"}], "totalHits": 1}
-    
+
     # Mock SearchRepository.search and index_document calls
     with (
         patch("app.infrastructure.search.client.search_client.enabled", True),
@@ -255,16 +271,16 @@ async def test_search_service_tenant_filtering_and_caching(cache_service):
         res1 = await service.search("files", "important", org_id)
         assert res1 == mock_res
         mock_search.assert_called_once()
-        
+
         # 2. Repeated Search (Cache Hit)
         res2 = await service.search("files", "important", org_id)
         assert res2 == mock_res
         # Repository should NOT be called again due to caching
         assert mock_search.call_count == 1
-        
+
         # 3. Index update invalidates cache
         await service.index_document("files", "doc-123", {"id": "doc-123", "organization_id": str(org_id)})
-        
+
         # 4. Search again (Cache Miss after invalidation)
         res3 = await service.search("files", "important", org_id)
         assert res3 == mock_res
@@ -369,12 +385,13 @@ async def test_job_failure_triggers_correctly():
 @pytest.mark.asyncio
 async def test_health_check_graceful_degradation(client):
     # Mock Search health to check health degraded status
-    with patch("app.infrastructure.search.health.search_client.health_status", return_value="unavailable"):
+    with patch("app.infrastructure.search.health.check_search_health", new_callable=AsyncMock, return_value="unavailable"):
         response = await client.get("/health")
         assert response.status_code == 200
         data = response.json()
         assert data["status"] == "degraded"
         assert data["search"] == "unavailable"
+
 
 
 @pytest.mark.asyncio

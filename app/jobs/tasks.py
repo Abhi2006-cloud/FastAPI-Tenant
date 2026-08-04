@@ -17,6 +17,8 @@ from app.jobs.async_runner import run_async
 
 # Ensure all SQLAlchemy ORM models are registered in worker process
 from app.modules.auth.models import User  # noqa: F401
+from app.modules.auth.session_model import UserSession  # noqa: F401
+from app.modules.auth.auth_audit_model import AuthAuditLog  # noqa: F401
 from app.modules.organizations.models import Organization  # noqa: F401
 from app.modules.memberships.models import Membership  # noqa: F401
 from app.modules.files.models import FileRecord  # noqa: F401
@@ -179,3 +181,34 @@ from app.jobs.search_tasks import (
     index_audit_log_task
 )
 
+
+# ── Session Cleanup Task ─────────────────────────────────────────────────────
+
+async def _cleanup_expired_sessions() -> dict:
+    """Delete expired user sessions from the database."""
+    from app.modules.auth.session_repository import SessionRepository
+
+    async with async_session_factory() as session:
+        try:
+            repo = SessionRepository(session)
+            deleted = await repo.delete_expired()
+            await session.commit()
+            return {"deleted_sessions": deleted}
+        except Exception:
+            await session.rollback()
+            raise
+
+
+def cleanup_expired_sessions_task() -> dict:
+    """Periodic RQ task: delete expired sessions. Run every SESSION_CLEANUP_INTERVAL_HOURS."""
+    logger.info("Job started: cleanup_expired_sessions")
+    try:
+        result = run_async(_cleanup_expired_sessions())
+        logger.info(
+            "Job completed: cleanup_expired_sessions deleted=%s",
+            result.get("deleted_sessions", 0),
+        )
+        return result
+    except Exception as exc:
+        logger.exception("Job failed: cleanup_expired_sessions: %s", exc)
+        raise

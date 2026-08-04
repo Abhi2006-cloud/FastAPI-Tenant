@@ -28,8 +28,16 @@ class Settings(BaseSettings):
     alembic_database_url: str | None = None
 
     secret_key: str = "change-me-to-a-long-random-secret-key-in-production"
-    access_token_expire_minutes: int = 60
+    access_token_expire_minutes: int = 15
     algorithm: str = "HS256"
+
+    # Session Management (v2.4.0)
+    refresh_token_expire_days: int = 30
+    max_active_sessions: int = 20
+    allow_multiple_sessions: bool = True
+    rotate_refresh_tokens: bool = True
+    revoke_on_refresh_replay: bool = True
+    session_cleanup_interval_hours: int = 24
 
     upload_dir: str = "uploads"
     max_upload_size_mb: int = 10

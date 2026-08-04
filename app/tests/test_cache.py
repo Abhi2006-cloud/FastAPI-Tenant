@@ -308,10 +308,17 @@ class TestCacheService:
 class TestHealthEndpoint:
     @pytest.mark.asyncio
     async def test_health_includes_database_and_redis(self, client, db_engine):
-        with patch("app.core.database.engine", db_engine):
+        with (
+            patch("app.core.database.engine", db_engine),
+            patch("app.main.check_search_health", new_callable=AsyncMock, return_value="connected"),
+        ):
             response = await client.get("/health")
         assert response.status_code == 200
         data = response.json()
         assert data["status"] == "ok"
+
+
         assert data["database"] == "connected"
         assert data["redis"] == "connected"
+        assert data["session_store"] == "connected"
+

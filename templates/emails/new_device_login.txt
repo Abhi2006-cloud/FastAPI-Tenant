@@ -1,0 +1,19 @@
+New login detected on your AI Workspace account
+================================================
+
+A new login was detected on your account.
+
+Details:
+  Device:           {{ device_name }}
+  Browser:          {{ browser }}
+  Operating System: {{ platform }}
+  IP Address:       {{ ip_address }}
+  Time:             {{ login_time }}
+
+If this was you, no action is needed.
+
+If you did NOT initiate this login, your account may be compromised.
+Visit your AI Workspace dashboard immediately to revoke all sessions:
+  {{ frontend_url }}
+
+You can manage all active sessions from the Sessions page in your dashboard.

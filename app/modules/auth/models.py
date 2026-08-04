@@ -40,3 +40,8 @@ class User(Base):
     uploaded_files: Mapped[list["FileRecord"]] = relationship(  # noqa: F821
         back_populates="uploaded_by_user",
     )
+    # Active login sessions (via user_sessions table)
+    sessions: Mapped[list["UserSession"]] = relationship(  # noqa: F821
+        back_populates="user",
+        cascade="all, delete-orphan",
+    )

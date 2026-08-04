@@ -1,4 +1,4 @@
-"""Application constants and configuration."""
+"""Application constants and configuration for FastAPI Tenant."""
 
 import os
 from pathlib import Path
@@ -19,6 +19,7 @@ PAGE_AUDIT_LOGS = "Audit Logs"
 PAGE_BACKGROUND_JOBS = "Background Jobs"
 PAGE_SEARCH = "Search"
 PAGE_EMAIL = "Email"
+PAGE_SESSIONS = "Sessions"
 
 
 
@@ -29,3 +30,5 @@ SESSION_USER = "user"
 SESSION_ORGANIZATION_ID = "organization_id"
 SESSION_ORGANIZATIONS = "organizations"
 SESSION_CURRENT_PAGE = "current_page"
+SESSION_REFRESH_TOKEN = "refresh_token"
+SESSION_SESSION_ID = "session_id"

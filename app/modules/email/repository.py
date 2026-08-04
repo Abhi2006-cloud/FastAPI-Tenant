@@ -14,10 +14,13 @@ class EmailLogRepository:
         self.db = db
 
     async def create(self, log: EmailLog) -> EmailLog:
+        if log.created_at is None:
+            from datetime import UTC, datetime
+            log.created_at = datetime.now(UTC)
         self.db.add(log)
         await self.db.commit()
-        await self.db.refresh(log)
         return log
+
 
     async def update(self, log: EmailLog) -> EmailLog:
         await self.db.commit()

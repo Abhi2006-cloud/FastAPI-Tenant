@@ -124,7 +124,7 @@ async def health() -> dict:
             async with engine.connect() as conn:
                 await conn.execute(text("SELECT 1"))
         import asyncio
-        await asyncio.wait_for(_check_db(), timeout=1.0)
+        await asyncio.wait_for(_check_db(), timeout=5.0)
         db_status = "connected"
     except Exception:
         db_status = "disconnected"
@@ -145,6 +145,17 @@ async def health() -> dict:
         except Exception:
             worker_stats = {"count": 0, "status": "unknown", "workers": []}
     
+    # Check session store health (based on DB connectivity)
+    try:
+        from app.modules.auth.session_repository import SessionRepository
+        from app.core.database import async_session_factory
+        async with async_session_factory() as db:
+            repo = SessionRepository(db)
+            await db.execute(__import__('sqlalchemy').text("SELECT 1 FROM user_sessions LIMIT 1"))
+        session_store_status = "connected"
+    except Exception:
+        session_store_status = "degraded"
+
     is_ok = (
         db_status == "connected" 
         and redis_status == "connected" 
@@ -158,6 +169,7 @@ async def health() -> dict:
         "database": db_status,
         "redis": redis_status,
         "search": search_status,
+        "session_store": session_store_status,
         "email": email_status,
         "email_detail": email_health,
         "worker": worker_stats["status"],

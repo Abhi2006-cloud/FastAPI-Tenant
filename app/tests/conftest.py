@@ -87,7 +87,6 @@ async def db_engine():
         patch("app.jobs.tasks.async_session_factory", session_factory),
     ):
         yield engine
-
     await engine.dispose()
 
 

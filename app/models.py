@@ -7,6 +7,8 @@ and create_all() see the full schema. Do not define models here — only import 
 
 from app.modules.audit.models import AuditLog  # noqa: F401
 from app.modules.auth.models import User  # noqa: F401
+from app.modules.auth.session_model import UserSession  # noqa: F401
+from app.modules.auth.auth_audit_model import AuthAuditLog  # noqa: F401
 from app.modules.files.models import FileRecord  # noqa: F401
 from app.modules.invitations.models import Invitation  # noqa: F401
 from app.modules.memberships.models import Membership  # noqa: F401

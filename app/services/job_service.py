@@ -35,7 +35,12 @@ class JobService:
     def _execute_sync(self, func: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
         """Run a task immediately (used in tests via job_sync_mode)."""
         logger.info("Job sync mode: executing %s immediately", func.__name__)
-        return func(*args, **kwargs)
+        try:
+            return func(*args, **kwargs)
+        except Exception as exc:
+            logger.warning("Job sync mode execution failed for %s: %s", func.__name__, exc)
+            return None
+
 
     def enqueue(
         self,

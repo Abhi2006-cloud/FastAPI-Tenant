@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+
+{% block title %}New login detected on your account{% endblock %}
+
+{% block content %}
+<p>Hello,</p>
+<p>A new login was detected on your <strong>AI Workspace</strong> account.</p>
+
+<table style="width: 100%; border-collapse: collapse; margin: 20px 0; background: #f8fafc; border-radius: 8px; overflow: hidden;">
+  <tr>
+    <td style="padding: 12px 16px; font-weight: 600; color: #374151; border-bottom: 1px solid #e5e7eb; width: 40%;">Device</td>
+    <td style="padding: 12px 16px; color: #6b7280; border-bottom: 1px solid #e5e7eb;">{{ device_name }}</td>
+  </tr>
+  <tr>
+    <td style="padding: 12px 16px; font-weight: 600; color: #374151; border-bottom: 1px solid #e5e7eb;">Browser</td>
+    <td style="padding: 12px 16px; color: #6b7280; border-bottom: 1px solid #e5e7eb;">{{ browser }}</td>
+  </tr>
+  <tr>
+    <td style="padding: 12px 16px; font-weight: 600; color: #374151; border-bottom: 1px solid #e5e7eb;">Operating System</td>
+    <td style="padding: 12px 16px; color: #6b7280; border-bottom: 1px solid #e5e7eb;">{{ platform }}</td>
+  </tr>
+  <tr>
+    <td style="padding: 12px 16px; font-weight: 600; color: #374151; border-bottom: 1px solid #e5e7eb;">IP Address</td>
+    <td style="padding: 12px 16px; color: #6b7280; border-bottom: 1px solid #e5e7eb;">{{ ip_address }}</td>
+  </tr>
+  <tr>
+    <td style="padding: 12px 16px; font-weight: 600; color: #374151;">Time</td>
+    <td style="padding: 12px 16px; color: #6b7280;">{{ login_time }}</td>
+  </tr>
+</table>
+
+<p>If this was you, no action is needed.</p>
+
+<p style="color: #dc2626; font-weight: 600;">If you did not initiate this login, your account may be compromised. Take action immediately:</p>
+
+<div class="button-container">
+  <a href="{{ frontend_url }}" class="btn-primary" target="_blank">Secure My Account</a>
+</div>
+
+<p style="font-size: 13px; color: #94a3b8; margin-top: 24px;">You can manage and revoke all active sessions from the Sessions page in your AI Workspace dashboard. If you have questions, contact our support team.</p>
+{% endblock %}

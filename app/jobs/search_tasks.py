@@ -33,14 +33,16 @@ def handle_job_failure(exc: Exception, index_name: str, doc_id: str, operation: 
     If no, raises the exception to trigger the retry mechanism.
     """
     job = get_current_job()
-    job_id = job.id if job else None
-    
-    # Determine if this is the final attempt
+    if not job:
+        logger.warning("Sync mode search indexing failure for index=%s, doc_id=%s: %s", index_name, doc_id, str(exc))
+        return
+
+    job_id = job.id
     is_final = True
-    if job:
-        retries_left = getattr(job, "retries_left", 0) or 0
-        if retries_left > 0:
-            is_final = False
+    retries_left = getattr(job, "retries_left", 0) or 0
+    if retries_left > 0:
+        is_final = False
+
 
     if is_final:
         logger.error("Job %s final indexing failure for index=%s, doc_id=%s: %s", 

@@ -22,7 +22,8 @@ def test_queue_names_defined() -> None:
     assert QUEUE_DEFAULT == "default"
     assert QUEUE_HIGH == "high"
     assert QUEUE_LOW == "low"
-    assert len(QUEUE_NAMES) == 3
+    assert len(QUEUE_NAMES) == 4
+
 
 
 def test_map_rq_status() -> None:

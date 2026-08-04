@@ -24,9 +24,12 @@ AI Workspace is a modular monolith SaaS application featuring:
 - **JWT** - Token-based authentication
 
 ### Frontend
-- **Streamlit** - Python framework for data apps
-- **Requests** - HTTP client for API communication
-- **Pandas** - Data manipulation and display
+- **React 19 + TypeScript** - Enterprise modern frontend stack (`frontend-react/`)
+- **Vite** - High performance bundler & dev server
+- **TanStack Query (v5)** - Server state management, caching & background refetching
+- **TailwindCSS** - Custom design system with light/dark/system theme support
+- **OpenAPI Type Generation** - `openapi-typescript` auto-generated API contracts
+- **Streamlit** - Legacy Python UI fallback (`frontend/`)
 
 ## Architecture
 

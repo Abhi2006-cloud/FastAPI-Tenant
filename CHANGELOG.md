@@ -5,7 +5,43 @@ All notable changes to AI Workspace SaaS will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.4.0] - 2026-08-02
+
+### Added
+- **Access Token + Refresh Token architecture**: Login now returns both a short-lived JWT access token (15min) and a long-lived opaque refresh token (30 days), replacing the previous single 60-minute JWT
+- **Persistent session storage**: `user_sessions` PostgreSQL table stores hashed refresh tokens with device metadata — UUID PK, user FK, refresh token hash (SHA-256), device name, platform, browser, IP address, user agent, created/expires/revoked/last-used timestamps
+- **Refresh Token Rotation**: `POST /auth/refresh` validates, rotates, and replaces the refresh token on every use; old token immediately invalidated
+- **Replay Attack Detection**: Reuse of an already-consumed refresh token triggers `REPLAY_ATTACK` detection, immediately revokes the entire session, and returns 401
+- **Session-scoped logout**: `POST /auth/logout` revokes the specific session identified by the refresh token; access token naturally expires
+- **Logout all devices**: `POST /auth/logout-all` revokes all sessions for the user with optional `keep_current` to preserve the calling session
+- **Session listing**: `GET /auth/sessions` returns all active sessions with device/browser/platform/IP/timestamps and `is_current` flag
+- **Remote session revocation**: `DELETE /auth/sessions/{session_id}` allows remotely logging out a specific device
+- **Device tracking**: Automatic browser, OS, and device name detection via `user-agents` library from User-Agent headers on login
+- **Auth Audit Log**: New `auth_audit_logs` table (user-scoped, not org-scoped) logs every auth event: `LOGIN`, `LOGOUT`, `LOGOUT_ALL`, `REFRESH`, `REPLAY_ATTACK`, `SESSION_REVOKED`, `SESSION_EXPIRED`, `NEW_DEVICE_LOGIN`
+- **New device email notification**: `new_device_login.html` + `.txt` Jinja2 templates; email queued fire-and-forget on login from a new device
+- **Session cleanup background job**: `cleanup_expired_sessions_task` RQ task deletes expired sessions; scheduled periodically via RQ Scheduler (configurable via `SESSION_CLEANUP_INTERVAL_HOURS`)
+- **`MAX_ACTIVE_SESSIONS` enforcement**: Oldest active session automatically evicted when a user's session count reaches the limit (default 20)
+- **Session management Streamlit page**: New `Sessions.py` page with session cards, current device badge, per-device logout, logout-all with confirmation, and manual token rotation
+- **Alembic migration** `20260802_0006_add_user_sessions_auth_audit.py`: creates both new tables with all indexes
+- **New config settings**: `REFRESH_TOKEN_EXPIRE_DAYS`, `MAX_ACTIVE_SESSIONS`, `ALLOW_MULTIPLE_SESSIONS`, `ROTATE_REFRESH_TOKENS`, `REVOKE_ON_REFRESH_REPLAY`, `SESSION_CLEANUP_INTERVAL_HOURS`
+- **Health endpoint** (`GET /health`) now includes `session_store` status (`connected`/`degraded`)
+- **Request context helpers** (`app/core/request_context.py`): extracts client IP (X-Forwarded-For aware) and User-Agent for all auth endpoints
+- **Comprehensive test suite** (`app/tests/test_sessions.py`): 15 tests covering all session lifecycle scenarios
+
+### Changed
+- `ACCESS_TOKEN_EXPIRE_MINUTES` default changed from 60 → 15 minutes (configurable)
+- Login response (`TokenResponse`) extended with `refresh_token`, `session_id`, and `expires_in` fields (backward-compatible addition)
+- Sidebar logout button now calls `POST /auth/logout` to revoke the server-side session before clearing local Streamlit state
+- `User` model gains `sessions` relationship (cascade delete-orphan)
+
+### Security
+- Refresh tokens are cryptographically random URL-safe strings (`secrets.token_urlsafe(32)`) — never JWT, never plaintext in DB
+- Only SHA-256 hashes of refresh tokens are persisted in `user_sessions.refresh_token_hash`
+- Replay attacks immediately trigger session revocation across all affected sessions
+- Session IDs are never exposed in URLs
+
 ## [2.3.0] - 2026-08-02
+
 
 ### Added
 - Configurable `EMAIL_MODE` (`development`, `production`, `console`) for flexible environment behavior

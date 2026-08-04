@@ -38,10 +38,13 @@ class AuditLogRepository:
         self.db = db
 
     async def create(self, audit_log: AuditLog) -> AuditLog:
+        if audit_log.created_at is None:
+            from datetime import UTC, datetime
+            audit_log.created_at = datetime.now(UTC)
         self.db.add(audit_log)
         await self.db.flush()
-        await self.db.refresh(audit_log)
         return audit_log
+
 
     def _apply_filters(self, stmt, filters: AuditFilters):
         if filters.action is not None:

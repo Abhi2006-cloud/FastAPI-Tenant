@@ -1,4 +1,4 @@
-"""Login page."""
+"""Login page — v2.4.0: stores refresh_token and session_id on successful login."""
 
 import streamlit as st
 
@@ -27,11 +27,13 @@ def render():
                 with st.spinner("Logging in..."):
                     response = login(email, password)
                     
-                    # Store auth data
+                    # Store auth data — v2.4.0: includes refresh_token + session_id
                     set_auth_data(
                         access_token=response["access_token"],
-                        token_type=response["token_type"],
-                        user_data={"email": email}  # Will fetch full user data after redirect
+                        token_type=response.get("token_type", "bearer"),
+                        user_data={"email": email},
+                        refresh_token=response.get("refresh_token"),
+                        session_id=str(response["session_id"]) if response.get("session_id") else None,
                     )
                     
                     st.success("Login successful!")
