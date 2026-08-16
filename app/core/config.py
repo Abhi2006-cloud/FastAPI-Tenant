@@ -21,6 +21,7 @@ class Settings(BaseSettings):
     )
 
     app_name: str = "AI Workspace SaaS Backend"
+    environment: str = "production"
     debug: bool = False  # When True, SQLAlchemy logs SQL queries
 
     # App runtime uses async driver (asyncpg). Alembic uses sync URL (see sync_database_url).
@@ -41,6 +42,13 @@ class Settings(BaseSettings):
 
     upload_dir: str = "uploads"
     max_upload_size_mb: int = 10
+
+    # Optional S3 Cloud Storage
+    s3_endpoint_url: str | None = None
+    s3_access_key_id: str | None = None
+    s3_secret_access_key: str | None = None
+    s3_bucket_name: str | None = None
+    s3_region: str = "auto"
 
     invitation_expire_hours: int = 72
 
@@ -71,10 +79,18 @@ class Settings(BaseSettings):
     email_from_name: str = "AI Workspace"
     email_from_address: str = "noreply@example.com"
     frontend_url: str = "http://localhost:8501"
+    allowed_origins: str = "*"
     email_queue_name: str = "email"
     email_max_retries: int = 5
     email_rate_limit_per_hour: int = 20
     expose_invitation_tokens: bool = False
+
+    @property
+    def allowed_origins_list(self) -> list[str]:
+        """Parse comma-separated allowed origins for CORS."""
+        if not self.allowed_origins or self.allowed_origins.strip() == "*":
+            return ["*"]
+        return [o.strip() for o in self.allowed_origins.split(",") if o.strip()]
 
     @property
     def effective_email_mode(self) -> str:
@@ -113,8 +129,20 @@ class Settings(BaseSettings):
     def max_upload_size_bytes(self) -> int:
         return self.max_upload_size_mb * 1024 * 1024
 
+    def mask_secret(self, secret: str | None) -> str:
+        """Mask secrets in logs."""
+        if not secret:
+            return "<none>"
+        if secret.startswith("redis://") or secret.startswith("rediss://") or secret.startswith("postgresql"):
+            import re
+            return re.sub(r"://([^:]+):([^@]+)@", r"://\1:***@", secret)
+        if len(secret) <= 8:
+            return "***"
+        return f"{secret[:4]}***{secret[-4:]}"
+
 
 @lru_cache
 def get_settings() -> Settings:
     """Cached settings instance — read .env once per process."""
     return Settings()
+

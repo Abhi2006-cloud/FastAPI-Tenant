@@ -57,6 +57,8 @@ class SearchService:
         # Cache check
         cached_res = await self.cache.get(cache_key)
         if cached_res is not None:
+            if isinstance(cached_res, dict):
+                return cached_res
             try:
                 return json.loads(cached_res)
             except Exception:
@@ -103,10 +105,13 @@ class SearchService:
 
         cached_res = await self.cache.get(cache_key)
         if cached_res is not None:
+            if isinstance(cached_res, dict):
+                return cached_res
             try:
                 return json.loads(cached_res)
             except Exception:
                 pass
+
 
         # Perform searches sequentially/concurrently
         files_res = await self.search("files", query, organization_id, limit, offset)

@@ -310,8 +310,9 @@ class TestHealthEndpoint:
     async def test_health_includes_database_and_redis(self, client, db_engine):
         with (
             patch("app.core.database.engine", db_engine),
-            patch("app.main.check_search_health", new_callable=AsyncMock, return_value="connected"),
+            patch("app.infrastructure.search.health.check_search_health", new_callable=AsyncMock, return_value="connected"),
         ):
+
             response = await client.get("/health")
         assert response.status_code == 200
         data = response.json()

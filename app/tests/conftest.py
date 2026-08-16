@@ -5,7 +5,8 @@ from unittest.mock import AsyncMock, patch
 # Must set before importing app modules that cache settings
 os.environ["JOB_SYNC_MODE"] = "true"
 os.environ["EXPOSE_INVITATION_TOKENS"] = "true"
-
+os.environ["EMAIL_MODE"] = "development"
+os.environ["EMAIL_PROVIDER"] = "console"
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -15,10 +16,27 @@ from app.core.config import get_settings
 
 get_settings.cache_clear()
 
+
+@pytest.fixture(autouse=True)
+def force_test_settings():
+    get_settings.cache_clear()
+    settings = get_settings()
+    settings.job_sync_mode = True
+    settings.expose_invitation_tokens = True
+    settings.email_mode = "development"
+    settings.email_provider = "console"
+    import app.main
+    app.main.settings = settings
+    yield
+    get_settings.cache_clear()
+
+
 from app.core.database import Base, get_db
 from app.main import app
 
+
 TEST_DATABASE_URL = "sqlite+aiosqlite:///:memory:"
+
 
 
 @pytest.fixture(autouse=True)
@@ -57,12 +75,13 @@ def mock_redis_for_tests():
         ),
         patch("app.infrastructure.search.service.SearchService.index_document", new=AsyncMock(return_value={"status": "ok"})),
         patch("app.infrastructure.search.service.SearchService.delete_document", new=AsyncMock(return_value={"status": "ok"})),
-        patch("app.infrastructure.search.client.SearchClient.initialize", new=AsyncMock(return_value=None)),
+        patch("app.infrastructure.search.client.SearchClient.initialize", new=AsyncMock(return_value=True)),
         patch("app.infrastructure.search.client.SearchClient.request", new=AsyncMock(return_value={"status": "ok"})),
         patch("app.jobs.search_tasks.search_service.index_document", new=AsyncMock(return_value={"status": "ok"})),
         patch("app.jobs.search_tasks.search_service.delete_document", new=AsyncMock(return_value={"status": "ok"})),
         patch("app.infrastructure.search.health.check_search_health", new=AsyncMock(return_value="connected")),
     ):
+
         yield mock_client
 
 

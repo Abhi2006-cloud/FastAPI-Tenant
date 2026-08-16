@@ -79,10 +79,11 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# Allows a separate frontend origin (e.g. localhost:3000) to call this API from the browser
+# Allows separate frontend origins (e.g. production React URL or localhost:3000) to call this API from the browser
+cors_origins = settings.allowed_origins_list
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -166,6 +167,8 @@ async def health() -> dict:
     
     return {
         "status": status_str,
+        "version": "2.5.0",
+        "environment": settings.environment,
         "database": db_status,
         "redis": redis_status,
         "search": search_status,
@@ -176,5 +179,6 @@ async def health() -> dict:
         "workers": worker_stats,
         "queues": queue_stats,
     }
+
 
 

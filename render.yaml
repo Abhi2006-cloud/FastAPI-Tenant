@@ -1,0 +1,131 @@
+# ==============================================================================
+# Render Infrastructure Blueprint (render.yaml)
+# AI Workspace SaaS v2.5.0 Production Architecture
+# ==============================================================================
+
+services:
+  # ----------------------------------------------------------------------------
+  # 1. FastAPI Web Service (Production API)
+  # ----------------------------------------------------------------------------
+  - type: web
+    name: ai-workspace-backend
+    runtime: docker
+    dockerfilePath: Dockerfile
+    plan: starter
+    region: oregon
+    healthCheckPath: /health
+    autoDeploy: true
+    startCommand: sh -c "alembic upgrade head && gunicorn -w 4 -k uvicorn.workers.UvicornWorker app.main:app --bind 0.0.0.0:$PORT"
+    envVars:
+      - key: APP_NAME
+        value: AI Workspace SaaS Backend
+      - key: ENVIRONMENT
+        value: production
+      - key: DEBUG
+        value: "false"
+      - key: DATABASE_URL
+        sync: false
+      - key: ALEMBIC_DATABASE_URL
+        sync: false
+      - key: SECRET_KEY
+        generateValue: true
+      - key: ACCESS_TOKEN_EXPIRE_MINUTES
+        value: "60"
+      - key: ALGORITHM
+        value: HS256
+      - key: REDIS_URL
+        sync: false
+      - key: MEILISEARCH_URL
+        sync: false
+      - key: MEILISEARCH_API_KEY
+        sync: false
+      - key: MEILISEARCH_INDEX_PREFIX
+        value: ai_workspace
+      - key: EMAIL_MODE
+        value: production
+      - key: EMAIL_PROVIDER
+        value: resend
+      - key: RESEND_API_KEY
+        sync: false
+      - key: EMAIL_FROM_NAME
+        value: AI Workspace
+      - key: EMAIL_FROM_ADDRESS
+        sync: false
+      - key: FRONTEND_URL
+        sync: false
+      - key: ALLOWED_ORIGINS
+        sync: false
+      - key: UPLOAD_DIR
+        value: uploads
+      - key: MAX_UPLOAD_SIZE_MB
+        value: "10"
+      - key: INVITATION_EXPIRE_HOURS
+        value: "72"
+
+  # ----------------------------------------------------------------------------
+  # 2. RQ Background Worker (Email, Search Indexing, Cleanup)
+  # ----------------------------------------------------------------------------
+  - type: worker
+    name: ai-workspace-rq-worker
+    runtime: docker
+    dockerfilePath: Dockerfile
+    plan: starter
+    region: oregon
+    autoDeploy: true
+    startCommand: python -m app.jobs.worker
+    envVars:
+      - key: APP_NAME
+        value: AI Workspace SaaS Worker
+      - key: ENVIRONMENT
+        value: production
+      - key: DEBUG
+        value: "false"
+      - key: DATABASE_URL
+        sync: false
+      - key: ALEMBIC_DATABASE_URL
+        sync: false
+      - key: SECRET_KEY
+        fromService:
+          type: web
+          name: ai-workspace-backend
+          property: SECRET_KEY
+      - key: REDIS_URL
+        sync: false
+      - key: MEILISEARCH_URL
+        sync: false
+      - key: MEILISEARCH_API_KEY
+        sync: false
+      - key: MEILISEARCH_INDEX_PREFIX
+        value: ai_workspace
+      - key: EMAIL_MODE
+        value: production
+      - key: EMAIL_PROVIDER
+        value: resend
+      - key: RESEND_API_KEY
+        sync: false
+      - key: EMAIL_FROM_NAME
+        value: AI Workspace
+      - key: EMAIL_FROM_ADDRESS
+        sync: false
+      - key: FRONTEND_URL
+        sync: false
+
+  # ----------------------------------------------------------------------------
+  # 3. React Static Site (Frontend SPA)
+  # ----------------------------------------------------------------------------
+  - type: static
+    name: ai-workspace-frontend
+    rootDir: frontend-react
+    buildCommand: npm ci && npm run build
+    publishPath: dist
+    autoDeploy: true
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
+    envVars:
+      - key: VITE_API_BASE_URL
+        fromService:
+          type: web
+          name: ai-workspace-backend
+          property: host

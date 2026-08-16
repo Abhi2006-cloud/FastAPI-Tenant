@@ -245,17 +245,21 @@ def test_mappers():
 # SearchService Tests (Tenant Isolation, Cache, Failover)
 # ---------------------------------------------------------
 @pytest.mark.asyncio
-async def test_search_service_tenant_filtering_and_caching(cache_service):
+async def test_search_service_tenant_filtering_and_caching():
     service = SearchService()
-    service.cache = cache_service
+    mock_cache = AsyncMock()
+    service.cache = mock_cache
     
     cache_store: dict = {}
     async def mock_get(key): return cache_store.get(key)
     async def mock_set(key, val, **kw): cache_store[key] = val
     async def mock_delete_pattern(pat): cache_store.clear()
-    cache_service.get.side_effect = mock_get
-    cache_service.set.side_effect = mock_set
-    cache_service.delete_pattern.side_effect = mock_delete_pattern
+    mock_cache.get.side_effect = mock_get
+    mock_cache.set.side_effect = mock_set
+    mock_cache.invalidate_pattern.side_effect = mock_delete_pattern
+    mock_cache.delete_pattern.side_effect = mock_delete_pattern
+
+
 
     org_id = uuid4()
     mock_res = {"hits": [{"id": "doc-123", "organization_id": str(org_id), "file_name": "important.pdf"}], "totalHits": 1}
