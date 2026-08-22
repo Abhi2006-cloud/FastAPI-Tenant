@@ -50,6 +50,7 @@ class OrganizationService:
             resource_id=organization.id,
             metadata={"name": data.name},
         )
+        await self.db.commit()
         
         # Enqueue search indexing tasks for the organization and owner membership
         self.job_service.enqueue(index_organization_task, str(organization.id))

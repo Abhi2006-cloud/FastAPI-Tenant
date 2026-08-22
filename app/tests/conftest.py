@@ -49,6 +49,8 @@ def mock_redis_for_tests():
     mock_client.setex = AsyncMock(return_value=True)
     mock_client.delete = AsyncMock(return_value=1)
     mock_client.exists = AsyncMock(return_value=0)
+    mock_client.incr = AsyncMock(return_value=1)
+    mock_client.expire = AsyncMock(return_value=True)
     mock_client.close = AsyncMock()
 
     mock_worker_stats = {"count": 0, "status": "stopped", "workers": []}
@@ -73,10 +75,6 @@ def mock_redis_for_tests():
             "app.services.job_service.JobService.get_queue_stats",
             return_value=mock_queue_stats,
         ),
-        patch("app.infrastructure.search.service.SearchService.index_document", new=AsyncMock(return_value={"status": "ok"})),
-        patch("app.infrastructure.search.service.SearchService.delete_document", new=AsyncMock(return_value={"status": "ok"})),
-        patch("app.infrastructure.search.client.SearchClient.initialize", new=AsyncMock(return_value=True)),
-        patch("app.infrastructure.search.client.SearchClient.request", new=AsyncMock(return_value={"status": "ok"})),
         patch("app.jobs.search_tasks.search_service.index_document", new=AsyncMock(return_value={"status": "ok"})),
         patch("app.jobs.search_tasks.search_service.delete_document", new=AsyncMock(return_value={"status": "ok"})),
         patch("app.infrastructure.search.health.check_search_health", new=AsyncMock(return_value="connected")),

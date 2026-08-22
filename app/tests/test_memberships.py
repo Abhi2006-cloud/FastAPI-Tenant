@@ -10,13 +10,21 @@ Tests cover:
 - Cross-tenant access prevention
 """
 
+from unittest.mock import patch
+
 import pytest
 from httpx import AsyncClient
 
 
+@pytest.fixture(autouse=True)
+def mock_job_service_enqueue():
+    with patch("app.services.job_service.JobService.enqueue", return_value="mock-job-id"):
+        yield
+
+
 async def _register_and_token(client: AsyncClient, email: str) -> str:
     """Helper to register a user and return their JWT token."""
-    await client.post(
+    res_reg = await client.post(
         "/auth/register",
         json={"email": email, "password": "securepass123"},
     )
@@ -24,7 +32,13 @@ async def _register_and_token(client: AsyncClient, email: str) -> str:
         "/auth/login",
         json={"email": email, "password": "securepass123"},
     )
-    return login.json()["access_token"]
+    data = login.json()
+    if "access_token" not in data:
+        raise KeyError(
+            f"access_token missing for {email}. Register status: {res_reg.status_code} ({res_reg.text}), "
+            f"Login status: {login.status_code} ({login.text})"
+        )
+    return data["access_token"]
 
 
 async def _create_org_and_get_id(client: AsyncClient, token: str) -> str:
@@ -68,7 +82,6 @@ async def test_list_members_as_owner(client: AsyncClient) -> None:
     org_id = await _create_org_and_get_id(client, owner_token)
     
     # Invite and add a member
-    await _register_and_token(client, "member@example.com")
     invite_token = await _add_member_to_org(client, org_id, "member@example.com", owner_token)
     member_token = await _register_and_token(client, "member@example.com")
     await _accept_invitation(client, member_token, invite_token)
@@ -94,7 +107,6 @@ async def test_list_members_as_member(client: AsyncClient) -> None:
     org_id = await _create_org_and_get_id(client, owner_token)
     
     # Invite and add a member
-    await _register_and_token(client, "member@example.com")
     invite_token = await _add_member_to_org(client, org_id, "member@example.com", owner_token)
     member_token = await _register_and_token(client, "member@example.com")
     await _accept_invitation(client, member_token, invite_token)
@@ -133,7 +145,6 @@ async def test_change_role_as_owner_promote_to_admin(client: AsyncClient) -> Non
     org_id = await _create_org_and_get_id(client, owner_token)
     
     # Add a member
-    await _register_and_token(client, "member@example.com")
     invite_token = await _add_member_to_org(client, org_id, "member@example.com", owner_token)
     member_token = await _register_and_token(client, "member@example.com")
     await _accept_invitation(client, member_token, invite_token)
@@ -163,7 +174,6 @@ async def test_change_role_as_owner_demote_to_member(client: AsyncClient) -> Non
     org_id = await _create_org_and_get_id(client, owner_token)
     
     # Add an admin
-    await _register_and_token(client, "admin@example.com")
     invite_token = await _add_member_to_org(client, org_id, "admin@example.com", owner_token)
     admin_token = await _register_and_token(client, "admin@example.com")
     await _accept_invitation(client, admin_token, invite_token)
@@ -199,7 +209,6 @@ async def test_change_role_admin_forbidden(client: AsyncClient) -> None:
     org_id = await _create_org_and_get_id(client, owner_token)
     
     # Add an admin
-    await _register_and_token(client, "admin@example.com")
     invite_token = await _add_member_to_org(client, org_id, "admin@example.com", owner_token)
     admin_token = await _register_and_token(client, "admin@example.com")
     await _accept_invitation(client, admin_token, invite_token)
@@ -236,7 +245,6 @@ async def test_change_role_member_forbidden(client: AsyncClient) -> None:
     org_id = await _create_org_and_get_id(client, owner_token)
     
     # Add a member
-    await _register_and_token(client, "member@example.com")
     invite_token = await _add_member_to_org(client, org_id, "member@example.com", owner_token)
     member_token = await _register_and_token(client, "member@example.com")
     await _accept_invitation(client, member_token, invite_token)
@@ -265,7 +273,6 @@ async def test_change_role_invalid_role(client: AsyncClient) -> None:
     org_id = await _create_org_and_get_id(client, owner_token)
     
     # Add a member
-    await _register_and_token(client, "member@example.com")
     invite_token = await _add_member_to_org(client, org_id, "member@example.com", owner_token)
     member_token = await _register_and_token(client, "member@example.com")
     await _accept_invitation(client, member_token, invite_token)
@@ -317,7 +324,6 @@ async def test_remove_member_as_owner(client: AsyncClient) -> None:
     org_id = await _create_org_and_get_id(client, owner_token)
     
     # Add a member
-    await _register_and_token(client, "member@example.com")
     invite_token = await _add_member_to_org(client, org_id, "member@example.com", owner_token)
     member_token = await _register_and_token(client, "member@example.com")
     await _accept_invitation(client, member_token, invite_token)
@@ -352,15 +358,13 @@ async def test_remove_member_admin_forbidden(client: AsyncClient) -> None:
     owner_token = await _register_and_token(client, "owner@example.com")
     org_id = await _create_org_and_get_id(client, owner_token)
     
-    # Add an admin and a member
-    await _register_and_token(client, "admin@example.com")
-    await _register_and_token(client, "member@example.com")
-    
+    # Add admin and member
     admin_invite = await _add_member_to_org(client, org_id, "admin@example.com", owner_token)
+    member_invite = await _add_member_to_org(client, org_id, "member@example.com", owner_token)
+    
     admin_token = await _register_and_token(client, "admin@example.com")
     await _accept_invitation(client, admin_token, admin_invite)
     
-    member_invite = await _add_member_to_org(client, org_id, "member@example.com", owner_token)
     member_token = await _register_and_token(client, "member@example.com")
     await _accept_invitation(client, member_token, member_invite)
     
@@ -393,17 +397,15 @@ async def test_remove_member_member_forbidden(client: AsyncClient) -> None:
     owner_token = await _register_and_token(client, "owner@example.com")
     org_id = await _create_org_and_get_id(client, owner_token)
     
-    # Add two members
-    await _register_and_token(client, "member1@example.com")
-    await _register_and_token(client, "member2@example.com")
+    # Add members
+    invite1 = await _add_member_to_org(client, org_id, "member1@example.com", owner_token)
+    invite2 = await _add_member_to_org(client, org_id, "member2@example.com", owner_token)
     
-    member1_invite = await _add_member_to_org(client, org_id, "member1@example.com", owner_token)
     member1_token = await _register_and_token(client, "member1@example.com")
-    await _accept_invitation(client, member1_token, member1_invite)
+    await _accept_invitation(client, member1_token, invite1)
     
-    member2_invite = await _add_member_to_org(client, org_id, "member2@example.com", owner_token)
     member2_token = await _register_and_token(client, "member2@example.com")
-    await _accept_invitation(client, member2_token, member2_invite)
+    await _accept_invitation(client, member2_token, invite2)
     
     # Get membership IDs
     members_response = await client.get(
@@ -450,7 +452,6 @@ async def test_remove_self_forbidden(client: AsyncClient) -> None:
     org_id = await _create_org_and_get_id(client, owner_token)
     
     # Add a member
-    await _register_and_token(client, "member@example.com")
     invite_token = await _add_member_to_org(client, org_id, "member@example.com", owner_token)
     member_token = await _register_and_token(client, "member@example.com")
     await _accept_invitation(client, member_token, invite_token)
@@ -478,7 +479,6 @@ async def test_transfer_ownership_success(client: AsyncClient) -> None:
     org_id = await _create_org_and_get_id(client, owner_token)
     
     # Add a member
-    await _register_and_token(client, "member@example.com")
     invite_token = await _add_member_to_org(client, org_id, "member@example.com", owner_token)
     member_token = await _register_and_token(client, "member@example.com")
     await _accept_invitation(client, member_token, invite_token)
@@ -522,7 +522,6 @@ async def test_transfer_ownership_non_owner_forbidden(client: AsyncClient) -> No
     org_id = await _create_org_and_get_id(client, owner_token)
     
     # Add a member
-    await _register_and_token(client, "member@example.com")
     invite_token = await _add_member_to_org(client, org_id, "member@example.com", owner_token)
     member_token = await _register_and_token(client, "member@example.com")
     await _accept_invitation(client, member_token, invite_token)
@@ -577,7 +576,6 @@ async def test_transfer_ownership_cross_tenant_forbidden(client: AsyncClient) ->
     other_owner_token = await _register_and_token(client, "otherowner@example.com")
     org2_id = await _create_org_and_get_id(client, other_owner_token)
     
-    await _register_and_token(client, "member@example.com")
     other_invite = await _add_member_to_org(client, org2_id, "member@example.com", other_owner_token)
     member_token = await _register_and_token(client, "member@example.com")
     await _accept_invitation(client, member_token, other_invite)

@@ -7,12 +7,20 @@ cross-tenant access, and RBAC read access for all member roles.
 
 import io
 
+from unittest.mock import patch
+
 import pytest
 from httpx import AsyncClient
 
 
+@pytest.fixture(autouse=True)
+def mock_job_service_enqueue():
+    with patch("app.services.job_service.JobService.enqueue", return_value="mock-job-id"):
+        yield
+
+
 async def _register_and_token(client: AsyncClient, email: str) -> str:
-    await client.post(
+    res_reg = await client.post(
         "/auth/register",
         json={"email": email, "password": "securepass123"},
     )
@@ -20,7 +28,13 @@ async def _register_and_token(client: AsyncClient, email: str) -> str:
         "/auth/login",
         json={"email": email, "password": "securepass123"},
     )
-    return login.json()["access_token"]
+    data = login.json()
+    if "access_token" not in data:
+        raise KeyError(
+            f"access_token missing for {email}. Register status: {res_reg.status_code} ({res_reg.text}), "
+            f"Login status: {login.status_code} ({login.text})"
+        )
+    return data["access_token"]
 
 
 async def _create_org(client: AsyncClient, token: str, name: str = "Test Org") -> str:
@@ -96,7 +110,6 @@ async def test_invitation_accepted_audit_event(client: AsyncClient) -> None:
     owner_token = await _register_and_token(client, "owner-inv@example.com")
     org_id = await _create_org(client, owner_token)
 
-    await _register_and_token(client, "accepted@example.com")
     invite = await client.post(
         f"/organizations/{org_id}/invite",
         json={"email": "accepted@example.com"},
@@ -124,7 +137,6 @@ async def test_member_role_changed_audit_event(client: AsyncClient) -> None:
     owner_token = await _register_and_token(client, "roleowner@example.com")
     org_id = await _create_org(client, owner_token)
 
-    await _register_and_token(client, "rolemember@example.com")
     invite = await client.post(
         f"/organizations/{org_id}/invite",
         json={"email": "rolemember@example.com"},
@@ -165,7 +177,6 @@ async def test_member_removed_audit_event(client: AsyncClient) -> None:
     owner_token = await _register_and_token(client, "removeowner@example.com")
     org_id = await _create_org(client, owner_token)
 
-    await _register_and_token(client, "removemember@example.com")
     invite = await client.post(
         f"/organizations/{org_id}/invite",
         json={"email": "removemember@example.com"},
@@ -204,7 +215,6 @@ async def test_ownership_transferred_audit_event(client: AsyncClient) -> None:
     owner_token = await _register_and_token(client, "transferowner@example.com")
     org_id = await _create_org(client, owner_token)
 
-    await _register_and_token(client, "newowner@example.com")
     invite = await client.post(
         f"/organizations/{org_id}/invite",
         json={"email": "newowner@example.com"},
@@ -416,7 +426,6 @@ async def test_audit_logs_member_read_access(client: AsyncClient) -> None:
     owner_token = await _register_and_token(client, "readowner@example.com")
     org_id = await _create_org(client, owner_token)
 
-    await _register_and_token(client, "readmember@example.com")
     invite = await client.post(
         f"/organizations/{org_id}/invite",
         json={"email": "readmember@example.com"},

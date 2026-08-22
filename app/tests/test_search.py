@@ -44,8 +44,6 @@ def setup_settings():
     settings.meilisearch_api_key = "test-key"
     settings.meilisearch_index_prefix = "ai_workspace"
     yield
-    settings.meilisearch_url = None
-    settings.meilisearch_api_key = None
 
 
 @pytest.fixture(autouse=True)
@@ -132,11 +130,14 @@ def test_circuit_breaker_flow():
 @pytest.mark.asyncio
 async def test_search_client_connection_success():
     client = search_client
+    client._async_client = None
+    client.circuit_breaker.state = "CLOSED"
     mock_resp = httpx.Response(200, json={"status": "available"})
+    mock_http = AsyncMock()
+    mock_http.get = AsyncMock(return_value=mock_resp)
     with (
         patch.object(client, "is_configured", return_value=True),
-        patch("httpx.AsyncClient.get", new_callable=AsyncMock, return_value=mock_resp),
-        patch("httpx.AsyncClient.request", new_callable=AsyncMock, return_value=mock_resp),
+        patch.object(client, "get_client", return_value=mock_http),
     ):
         connected = await client.initialize()
         assert connected is True
@@ -149,9 +150,13 @@ async def test_search_client_connection_success():
 @pytest.mark.asyncio
 async def test_search_client_connection_failure():
     client = search_client
+    client._async_client = None
+    client.circuit_breaker.state = "CLOSED"
+    mock_http = AsyncMock()
+    mock_http.get = AsyncMock(side_effect=httpx.ConnectError("Connection refused"))
     with (
         patch.object(client, "is_configured", return_value=True),
-        patch("httpx.AsyncClient.get", new_callable=AsyncMock, side_effect=httpx.ConnectError("Connection refused")),
+        patch.object(client, "get_client", return_value=mock_http),
     ):
         connected = await client.initialize()
         assert connected is False
@@ -164,6 +169,7 @@ async def test_search_client_connection_failure():
 @pytest.mark.asyncio
 async def test_search_client_requests_fail_when_circuit_open():
     client = search_client
+    client._async_client = None
     client.enabled = True
     client.circuit_breaker.state = "OPEN"
     client.circuit_breaker.last_state_change = time.time()
@@ -259,17 +265,17 @@ async def test_search_service_tenant_filtering_and_caching():
     mock_cache.invalidate_pattern.side_effect = mock_delete_pattern
     mock_cache.delete_pattern.side_effect = mock_delete_pattern
 
-
-
     org_id = uuid4()
     mock_res = {"hits": [{"id": "doc-123", "organization_id": str(org_id), "file_name": "important.pdf"}], "totalHits": 1}
 
+    search_client.enabled = True
+    search_client.circuit_breaker.state = "CLOSED"
+
     # Mock SearchRepository.search and index_document calls
     with (
-        patch("app.infrastructure.search.client.search_client.enabled", True),
-        patch("app.infrastructure.search.client.search_client.is_configured", return_value=True),
-        patch.object(SearchRepository, "search", return_value=mock_res) as mock_search,
-        patch.object(SearchRepository, "index_document", return_value=None) as mock_index
+        patch.object(search_client, "is_configured", return_value=True),
+        patch.object(service.repo, "search", new_callable=AsyncMock, return_value=mock_res) as mock_search,
+        patch.object(service.repo, "index_document", new_callable=AsyncMock, return_value=None) as mock_index
     ):
         # 1. Search (Cache Miss)
         res1 = await service.search("files", "important", org_id)

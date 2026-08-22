@@ -6,6 +6,13 @@ on:
   pull_request:
     branches: [ main, master ]
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   backend-tests:
     name: Backend Pytest & Verification
@@ -30,6 +37,8 @@ jobs:
           JOB_SYNC_MODE: 'true'
           EXPOSE_INVITATION_TOKENS: 'true'
           EMAIL_MODE: 'development'
+          SECRET_KEY: 'ci-secret-key-for-testing-only'
+          DATABASE_URL: 'sqlite+aiosqlite:///:memory:'
         run: |
           pytest --verbose
 
@@ -56,6 +65,9 @@ jobs:
       - name: TypeScript Type Check
         run: npm run type-check
 
+      - name: Code Linting
+        run: npm run lint
+
       - name: Production React Build
         run: npm run build
 
@@ -67,7 +79,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Set up Docker Buildx
-        uses: actions/docker-buildx-action@v3
+        uses: docker/setup-buildx-action@v3
 
       - name: Build Docker image
         uses: docker/build-push-action@v5
@@ -76,3 +88,5 @@ jobs:
           file: ./Dockerfile
           push: false
           tags: ai-workspace-backend:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

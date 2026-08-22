@@ -64,6 +64,18 @@ class FileService:
             file_size=len(content),
         )
         created = await self.repo.create(record)
+        await self.db.commit()
+
+        await AuditLogService(self.db).create_event(
+            organization_id=organization_id,
+            actor_user_id=user_id,
+            action=AuditAction.FILE_UPLOADED,
+            resource_type=RESOURCE_FILE,
+            resource_id=created.id,
+            metadata={"file_name": safe_name, "file_size": len(content)},
+        )
+        await self.db.commit()
+
         # Worker post-processing (metadata collection; future: virus scan, thumbnails).
         # In JOB_SYNC_MODE the request session is the source of truth; skip separate DB work.
         if not settings.job_sync_mode:
@@ -75,14 +87,6 @@ class FileService:
         
         # Enqueue search indexing task
         self.job_service.enqueue(index_file_task, str(created.id))
-        await AuditLogService(self.db).create_event(
-            organization_id=organization_id,
-            actor_user_id=user_id,
-            action=AuditAction.FILE_UPLOADED,
-            resource_type=RESOURCE_FILE,
-            resource_id=created.id,
-            metadata={"file_name": safe_name, "file_size": len(content)},
-        )
         return created
 
     async def list_files(self, user_id: UUID, organization_id: UUID) -> list[FileRecord]:
@@ -123,6 +127,7 @@ class FileService:
             resource_id=file_id,
             metadata={"file_name": file_record.file_name, "file_size": file_record.file_size},
         )
+        await self.db.commit()
         return content, file_record.file_name
 
     async def delete_file(
@@ -158,9 +163,8 @@ class FileService:
         
         # Delete database record
         await self.repo.delete(file_id)
-        
-        # Enqueue search deletion task
-        self.job_service.enqueue(delete_file_task, str(file_id), str(organization_id))
+        await self.db.commit()
+
         await AuditLogService(self.db).create_event(
             organization_id=organization_id,
             actor_user_id=user_id,
@@ -169,6 +173,10 @@ class FileService:
             resource_id=file_id,
             metadata=file_metadata,
         )
+        await self.db.commit()
+        
+        # Enqueue search deletion task
+        self.job_service.enqueue(delete_file_task, str(file_id), str(organization_id))
 
     async def get_statistics(
         self, user_id: UUID, organization_id: UUID

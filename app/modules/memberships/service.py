@@ -66,6 +66,7 @@ class MembershipService:
         if existing is not None:
             raise ConflictError("User is already a member of this organization")
         membership = await self.repo.create(user_id, organization_id, role)
+        await self.db.commit()
         # Enqueue background search indexing
         self.job_service.enqueue(index_member_task, str(membership.id))
         # Invalidate user's organization list cache (invitation accepted)

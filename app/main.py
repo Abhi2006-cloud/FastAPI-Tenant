@@ -161,7 +161,7 @@ async def health() -> dict:
         db_status == "connected" 
         and redis_status == "connected" 
         and search_status in ("connected", "ok")
-        and email_status in ("connected", "console")
+        and email_status in ("connected", "console", "development")
     )
     status_str = "ok" if is_ok else "degraded"
     

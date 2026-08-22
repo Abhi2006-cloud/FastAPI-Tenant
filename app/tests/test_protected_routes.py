@@ -1,17 +1,24 @@
 import io
+import uuid
 
 import pytest
 from httpx import AsyncClient
 
 
 async def _auth_headers(client: AsyncClient, email: str) -> dict[str, str]:
+    if "@" in email:
+        name, domain = email.split("@")
+        unique_email = f"{name}_{uuid.uuid4().hex[:6]}@{domain}"
+    else:
+        unique_email = f"{email}_{uuid.uuid4().hex[:6]}@example.com"
+
     await client.post(
         "/auth/register",
-        json={"email": email, "password": "securepass123"},
+        json={"email": unique_email, "password": "securepass123"},
     )
     login = await client.post(
         "/auth/login",
-        json={"email": email, "password": "securepass123"},
+        json={"email": unique_email, "password": "securepass123"},
     )
     token = login.json()["access_token"]
     return {"Authorization": f"Bearer {token}"}
