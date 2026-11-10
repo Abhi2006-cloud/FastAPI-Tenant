@@ -32,6 +32,17 @@ class OrganizationRepository:
         await self.db.refresh(organization)
         return organization
 
+    async def update_owner(self, organization_id: UUID, new_owner_id: UUID) -> Organization:
+        """Update the owner_id of an organization."""
+        organization = await self.get_by_id(organization_id)
+        if organization is None:
+            from app.core.exceptions import NotFoundError
+            raise NotFoundError("Organization not found")
+        organization.owner_id = new_owner_id
+        await self.db.flush()
+        await self.db.refresh(organization)
+        return organization
+
     async def list_for_user(self, user_id: UUID) -> list[Organization]:
         """All tenants (workspaces) this user is a member of."""
         result = await self.db.execute(

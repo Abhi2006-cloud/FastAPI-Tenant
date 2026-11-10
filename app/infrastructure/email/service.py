@@ -156,14 +156,25 @@ class EmailService:
             text_content=text_content,
         )
 
-    async def retry_email(self, email_log_id: UUID) -> Optional[EmailLog]:
-        """Re-queue a failed EmailLog entry."""
+    async def retry_email(
+        self, email_log_id: UUID, organization_id: Optional[UUID] = None
+    ) -> Optional[EmailLog]:
+        """Re-queue a failed EmailLog entry, verifying organization ownership."""
         if not self.db:
             raise RuntimeError("Database session required for retry_email.")
 
         repo = EmailLogRepository(self.db)
         log = await repo.get_by_id(email_log_id)
         if not log:
+            return None
+
+        # Enforce organization ownership if specified
+        if organization_id is not None and log.organization_id != organization_id:
+            logger.warning(
+                "Cross-tenant email retry rejected. Log org: %s, Request org: %s",
+                log.organization_id,
+                organization_id,
+            )
             return None
 
         if log.status not in (EmailStatus.FAILED, EmailStatus.CANCELLED):

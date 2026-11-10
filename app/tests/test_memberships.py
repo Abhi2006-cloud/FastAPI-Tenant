@@ -514,6 +514,15 @@ async def test_transfer_ownership_success(client: AsyncClient) -> None:
     assert new_owner["role"] == "owner"
     assert old_owner["role"] == "admin"
 
+    # Verify Organization record owner_id is updated to new owner
+    my_orgs_response = await client.get(
+        "/organizations/my",
+        headers={"Authorization": f"Bearer {member_token}"},
+    )
+    assert my_orgs_response.status_code == 200
+    my_org = [o for o in my_orgs_response.json() if o["id"] == org_id][0]
+    assert my_org["owner_id"] == member_membership["user_id"]
+
 
 @pytest.mark.asyncio
 async def test_transfer_ownership_non_owner_forbidden(client: AsyncClient) -> None:

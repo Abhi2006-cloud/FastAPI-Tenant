@@ -47,41 +47,68 @@ class JobService:
         func: Callable[..., Any],
         *args: Any,
         queue_name: str = QUEUE_DEFAULT,
+        organization_id: str | Any | None = None,
         **kwargs: Any,
     ) -> str:
-        """Enqueue a job on the specified queue. Returns job ID."""
+        """Enqueue a job on the specified queue with tenant context. Returns job ID."""
         settings = get_settings()
         if settings.job_sync_mode:
             self._execute_sync(func, *args, **kwargs)
             return "sync-mode"
 
+        # Determine organization_id from parameter, kwargs, or ContextVar
+        org_id = organization_id or kwargs.pop("org_id", None)
+        if not org_id:
+            try:
+                from app.middleware.tenant import get_tenant_organization_id
+                org_id = get_tenant_organization_id()
+            except Exception:
+                org_id = None
+
+        meta = kwargs.pop("meta", {}) or {}
+        if org_id:
+            meta["organization_id"] = str(org_id)
+
         queue = get_queue_by_name(queue_name)
         job = queue.enqueue(
             func,
             *args,
-            **kwargs,
+            meta=meta,
             retry=self._retry,
             result_ttl=settings.rq_result_ttl,
             failure_ttl=settings.rq_failure_ttl,
+            **kwargs,
         )
-        logger.info("Job queued: job_id=%s queue=%s func=%s", job.id, queue_name, func.__name__)
+        logger.info(
+            "Job queued: job_id=%s queue=%s func=%s org=%s",
+            job.id,
+            queue_name,
+            func.__name__,
+            org_id,
+        )
         return job.id
 
     def enqueue_high_priority(
         self,
         func: Callable[..., Any],
         *args: Any,
+        organization_id: str | Any | None = None,
         **kwargs: Any,
     ) -> str:
-        return self.enqueue(func, *args, queue_name=QUEUE_HIGH, **kwargs)
+        return self.enqueue(
+            func, *args, queue_name=QUEUE_HIGH, organization_id=organization_id, **kwargs
+        )
 
     def enqueue_low_priority(
         self,
         func: Callable[..., Any],
         *args: Any,
+        organization_id: str | Any | None = None,
         **kwargs: Any,
     ) -> str:
-        return self.enqueue(func, *args, queue_name=QUEUE_LOW, **kwargs)
+        return self.enqueue(
+            func, *args, queue_name=QUEUE_LOW, organization_id=organization_id, **kwargs
+        )
 
     def enqueue_delayed(
         self,
@@ -89,6 +116,7 @@ class JobService:
         delay: timedelta,
         *args: Any,
         queue_name: str = QUEUE_DEFAULT,
+        organization_id: str | Any | None = None,
         **kwargs: Any,
     ) -> str:
         """Enqueue a job to run after a delay."""
@@ -97,26 +125,42 @@ class JobService:
             self._execute_sync(func, *args, **kwargs)
             return "sync-mode"
 
+        org_id = organization_id or kwargs.pop("org_id", None)
+        if not org_id:
+            try:
+                from app.middleware.tenant import get_tenant_organization_id
+                org_id = get_tenant_organization_id()
+            except Exception:
+                org_id = None
+
+        meta = kwargs.pop("meta", {}) or {}
+        if org_id:
+            meta["organization_id"] = str(org_id)
+
         queue = get_queue_by_name(queue_name)
         job = queue.enqueue_in(
             delay,
             func,
             *args,
-            **kwargs,
+            meta=meta,
             retry=self._retry,
             result_ttl=settings.rq_result_ttl,
             failure_ttl=settings.rq_failure_ttl,
+            **kwargs,
         )
         logger.info(
-            "Job queued (delayed): job_id=%s queue=%s delay=%ss",
+            "Job queued (delayed): job_id=%s queue=%s delay=%ss org=%s",
             job.id,
             queue_name,
             delay.total_seconds(),
+            org_id,
         )
         return job.id
 
-    def get_job(self, job_id: str) -> dict[str, Any] | None:
-        """Fetch job status by ID."""
+    def get_job(
+        self, job_id: str, organization_id: str | Any | None = None
+    ) -> dict[str, Any] | None:
+        """Fetch job status by ID, scoped to an organization when provided."""
         if job_id == "sync-mode":
             return {
                 "job_id": job_id,
@@ -131,6 +175,11 @@ class JobService:
 
         try:
             job = Job.fetch(job_id, connection=get_sync_redis_connection())
+            if organization_id is not None:
+                job_org = job.meta.get("organization_id")
+                # If job was tagged with an organization, require exact match
+                if not job_org or str(job_org) != str(organization_id):
+                    return None
             return build_job_status_payload(job)
         except NoSuchJobError:
             return None
@@ -183,9 +232,10 @@ class JobService:
         *,
         status: str | None = None,
         queue_name: str | None = None,
+        organization_id: str | Any | None = None,
         limit: int = 50,
     ) -> list[dict[str, Any]]:
-        """List jobs across queues, optionally filtered by status."""
+        """List jobs across queues, optionally filtered by status and organization."""
         from app.jobs.queue import QUEUE_NAMES
 
         queues = [get_queue_by_name(queue_name)] if queue_name else [
@@ -216,7 +266,7 @@ class JobService:
                     continue
                 seen_ids.add(job_id)
 
-                payload = self.get_job(job_id)
+                payload = self.get_job(job_id, organization_id=organization_id)
                 if payload and (status is None or payload["status"] == status):
                     jobs.append(payload)
 

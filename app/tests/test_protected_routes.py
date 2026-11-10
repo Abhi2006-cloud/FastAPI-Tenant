@@ -297,18 +297,56 @@ async def test_delete_other_user_file_forbidden_as_member(client: AsyncClient) -
     file_id = upload_response.json()["id"]
 
     # Member tries to delete owner's file
-    member_headers = await _auth_headers(client, "member@example.com")
-    # Add member to organization (simplified - in real test would use invitation flow)
-    # For this test, we'll just verify the permission check works
-    
+    # Real invitation flow so member is a verified tenant member with role MEMBER
+    member_email = f"member_{uuid.uuid4().hex[:6]}@example.com"
+    await client.post(
+        "/auth/register",
+        json={"email": member_email, "password": "securepass123"},
+    )
+    login_res = await client.post(
+        "/auth/login",
+        json={"email": member_email, "password": "securepass123"},
+    )
+    member_token = login_res.json()["access_token"]
+    member_headers = {"Authorization": f"Bearer {member_token}"}
+
+    invite_res = await client.post(
+        f"/organizations/{org['id']}/invite",
+        json={"email": member_email},
+        headers=owner_headers,
+    )
+    assert invite_res.status_code == 201
+    invite_token = invite_res.json()["token"]
+
+    accept_res = await client.post(
+        "/invitations/accept",
+        json={"token": invite_token},
+        headers=member_headers,
+    )
+    assert accept_res.status_code == 200
+
     member_tenant_headers = {
         **member_headers,
         "X-Organization-Id": org["id"],
     }
 
+    # Member attempts to delete owner's file -> 403 Forbidden specifically due to RBAC
     delete_response = await client.delete(f"/files/{file_id}", headers=member_tenant_headers)
-    # This will fail because member is not actually in the org, but the permission check is there
     assert delete_response.status_code == 403
+    assert "You can only delete files you uploaded" in delete_response.text
+
+    # Member uploads their own file -> 201
+    member_upload = await client.post(
+        "/files/upload",
+        headers=member_tenant_headers,
+        files={"file": ("member_doc.txt", io.BytesIO(b"my own file"), "text/plain")},
+    )
+    assert member_upload.status_code == 201
+    member_file_id = member_upload.json()["id"]
+
+    # Member can delete their own file -> 200
+    member_delete = await client.delete(f"/files/{member_file_id}", headers=member_tenant_headers)
+    assert member_delete.status_code == 200
 
 
 @pytest.mark.asyncio
@@ -366,3 +404,98 @@ async def test_get_file_statistics(client: AsyncClient) -> None:
     assert stats["total_files"] == 2
     assert stats["total_size_bytes"] == 300
     assert stats["average_file_size"] == 150
+
+
+def test_storage_path_containment_and_traversal_protection(tmp_path) -> None:
+    """Verify that StorageService strictly enforces canonical path containment."""
+    from pathlib import Path
+    from app.core.exceptions import ForbiddenError
+    from app.modules.files.storage import StorageService
+
+    storage_root = tmp_path / "storage_root"
+    storage_root.mkdir()
+    storage = StorageService(storage_root)
+
+    # 1. Valid path inside storage root
+    valid_file = storage_root / "org1" / "file.txt"
+    storage.save(valid_file, b"valid content")
+    assert storage.exists(valid_file)
+    assert storage.read(valid_file) == b"valid content"
+    assert storage.get_file_size(valid_file) == 13
+    assert storage.delete(valid_file) is True
+
+    # 2. Path traversal with ../
+    traversal_path = storage_root / "org1" / ".." / ".." / "outside.txt"
+    with pytest.raises(ForbiddenError, match="Path traversal detected"):
+        storage.save(traversal_path, b"evil")
+
+    with pytest.raises(ForbiddenError, match="Path traversal detected"):
+        storage.read(traversal_path)
+
+    with pytest.raises(ForbiddenError, match="Path traversal detected"):
+        storage.delete(traversal_path)
+
+    # 3. Absolute path outside storage root
+    outside_file = tmp_path / "secret.txt"
+    outside_file.write_bytes(b"sensitive")
+    with pytest.raises(ForbiddenError, match="Path traversal detected"):
+        storage.read(outside_file)
+
+    # 4. Symlink escape attempt
+    link_path = storage_root / "symlink_escape"
+    try:
+        link_path.symlink_to(outside_file)
+        with pytest.raises(ForbiddenError, match="Path traversal detected"):
+            storage.read(link_path)
+    except OSError:
+        pass  # If OS does not permit symlink creation in test environment
+
+
+@pytest.mark.asyncio
+async def test_upload_size_limit_rejection_and_cleanup(client: AsyncClient, monkeypatch) -> None:
+    """Verify that files exceeding the size limit are aborted and partial files cleaned up."""
+    from app.core.config import get_settings
+
+    headers = await _auth_headers(client, "sizetest@example.com")
+    org = (
+        await client.post(
+            "/organizations",
+            json={"name": "Size Limit Org"},
+            headers=headers,
+        )
+    ).json()
+
+    tenant_headers = {
+        **headers,
+        "X-Organization-Id": org["id"],
+    }
+
+    from app.core.config import get_settings
+    settings = get_settings()
+    monkeypatch.setattr(settings, "max_upload_size_mb", 1)
+
+    # Attempt to upload 1.5 MB file
+    oversized_data = b"x" * (1024 * 1024 + 500)
+    upload_res = await client.post(
+        "/files/upload",
+        headers=tenant_headers,
+        files={"file": ("large.txt", io.BytesIO(oversized_data), "text/plain")},
+    )
+    assert upload_res.status_code == 400
+    assert "File exceeds maximum size" in upload_res.text
+
+    # Verify no file remains in the organization upload folder
+    import os
+    org_folder = os.path.join(settings.upload_dir, org["id"])
+    if os.path.exists(org_folder):
+        files_in_folder = os.listdir(org_folder)
+        assert len(files_in_folder) == 0
+
+    # Attempt to upload empty file -> 400
+    empty_res = await client.post(
+        "/files/upload",
+        headers=tenant_headers,
+        files={"file": ("empty.txt", io.BytesIO(b""), "text/plain")},
+    )
+    assert empty_res.status_code == 400
+    assert "Empty file" in empty_res.text

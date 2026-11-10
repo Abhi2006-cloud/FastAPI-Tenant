@@ -206,14 +206,170 @@ async def test_job_status_endpoint(client: AsyncClient) -> None:
     from app.tests.test_audit_logs import _register_and_token
 
     token = await _register_and_token(client, "jobuser@example.com")
+    org_res = await client.post(
+        "/organizations",
+        json={"name": "Job Test Org"},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert org_res.status_code == 201
+    org_id = org_res.json()["id"]
+
     response = await client.get(
         "/jobs/sync-mode",
-        headers={"Authorization": f"Bearer {token}"},
+        headers={
+            "Authorization": f"Bearer {token}",
+            "X-Organization-Id": org_id,
+        },
     )
     assert response.status_code == 200
     body = response.json()
     assert body["job_id"] == "sync-mode"
     assert body["status"] == "finished"
+
+
+@pytest.mark.asyncio
+async def test_job_endpoint_requires_org_header_and_membership(client: AsyncClient) -> None:
+    from app.tests.test_audit_logs import _register_and_token
+
+    token = await _register_and_token(client, "noorguser@example.com")
+    # Missing X-Organization-Id header
+    res_no_header = await client.get(
+        "/jobs/sync-mode",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert res_no_header.status_code == 403
+    assert "X-Organization-Id header is required" in res_no_header.text
+
+    # With non-existent organization
+    import uuid
+    res_non_member = await client.get(
+        "/jobs/sync-mode",
+        headers={
+            "Authorization": f"Bearer {token}",
+            "X-Organization-Id": str(uuid.uuid4()),
+        },
+    )
+    assert res_non_member.status_code == 403
+    assert "not a member" in res_non_member.text
+
+
+@pytest.mark.asyncio
+async def test_job_endpoint_member_role_rejected(client: AsyncClient) -> None:
+    from app.tests.test_memberships import (
+        _accept_invitation,
+        _add_member_to_org,
+        _create_org_and_get_id,
+        _register_and_token,
+    )
+
+    owner_token = await _register_and_token(client, "jobowner@example.com")
+    org_id = await _create_org_and_get_id(client, owner_token)
+
+    # Invite regular member
+    invite_token = await _add_member_to_org(client, org_id, "jobregular@example.com", owner_token)
+    member_token = await _register_and_token(client, "jobregular@example.com")
+    await _accept_invitation(client, member_token, invite_token)
+
+    # Regular member attempts to list jobs or get job status
+    member_headers = {
+        "Authorization": f"Bearer {member_token}",
+        "X-Organization-Id": org_id,
+    }
+    list_res = await client.get("/jobs", headers=member_headers)
+    assert list_res.status_code == 403
+    assert "Insufficient permissions" in list_res.text
+
+    get_res = await client.get("/jobs/sync-mode", headers=member_headers)
+    assert get_res.status_code == 403
+    assert "Insufficient permissions" in get_res.text
+
+
+@pytest.mark.asyncio
+async def test_job_tenant_isolation_cannot_access_other_tenant_job(client: AsyncClient) -> None:
+    from app.tests.test_memberships import _create_org_and_get_id, _register_and_token
+
+    owner_a_token = await _register_and_token(client, "ownera@example.com")
+    org_a_id = await _create_org_and_get_id(client, owner_a_token)
+
+    owner_b_token = await _register_and_token(client, "ownerb@example.com")
+    org_b_id = await _create_org_and_get_id(client, owner_b_token)
+
+    # Mock an RQ job belonging to Org A
+    mock_job = MagicMock()
+    mock_job.id = "job-org-a-123"
+    mock_job.get_status.return_value = "finished"
+    mock_job.origin = "default"
+    mock_job.created_at = None
+    mock_job.started_at = None
+    mock_job.ended_at = None
+    mock_job.result = {"status": "ok"}
+    mock_job.exc_info = None
+    mock_job.meta = {"organization_id": org_a_id}
+
+    with (
+        patch("app.services.job_service.Job.fetch", return_value=mock_job),
+        patch("app.services.job_service.get_sync_redis_connection", return_value=MagicMock()),
+    ):
+        # Owner B tries to fetch Org A's job using Org B's context -> 404 (isolation enforced)
+        res_b = await client.get(
+            f"/jobs/{mock_job.id}",
+            headers={
+                "Authorization": f"Bearer {owner_b_token}",
+                "X-Organization-Id": org_b_id,
+            },
+        )
+        assert res_b.status_code == 404
+
+        # Owner A fetches Org A's job using Org A's context -> 200
+        res_a = await client.get(
+            f"/jobs/{mock_job.id}",
+            headers={
+                "Authorization": f"Bearer {owner_a_token}",
+                "X-Organization-Id": org_a_id,
+            },
+        )
+        assert res_a.status_code == 200
+        assert res_a.json()["job_id"] == mock_job.id
+
+
+def test_job_payload_does_not_leak_stack_traces_or_secrets() -> None:
+    # 1. Failed job masks internal stack traces and paths
+    mock_failed_job = MagicMock()
+    mock_failed_job.id = "job-err-1"
+    mock_failed_job.get_status.return_value = "failed"
+    mock_failed_job.origin = "default"
+    mock_failed_job.created_at = None
+    mock_failed_job.started_at = None
+    mock_failed_job.ended_at = None
+    mock_failed_job.result = None
+    mock_failed_job.exc_info = (
+        "Traceback (most recent call last):\n"
+        '  File "/app/services/internal.py", line 42, in process_data\n'
+        '    secret = "db_pass_123"\n'
+        "ValueError: Invalid configuration value provided"
+    )
+
+    failed_payload = build_job_status_payload(mock_failed_job)
+    assert failed_payload["status"] == "failed"
+    assert "/app/services/internal.py" not in failed_payload["error"]
+    assert "db_pass_123" not in failed_payload["error"]
+    assert failed_payload["error"] == "ValueError: Invalid configuration value provided"
+
+    # 2. Finished job masks sensitive keys in result
+    mock_finished_job = MagicMock()
+    mock_finished_job.id = "job-ok-1"
+    mock_finished_job.get_status.return_value = "finished"
+    mock_finished_job.origin = "default"
+    mock_finished_job.created_at = None
+    mock_finished_job.started_at = None
+    mock_finished_job.ended_at = None
+    mock_finished_job.result = {"secret_token": "supersecret123", "data": "safe"}
+    mock_finished_job.exc_info = None
+
+    finished_payload = build_job_status_payload(mock_finished_job)
+    assert finished_payload["status"] == "finished"
+    assert finished_payload["result"]["secret_token"] == "***"
+    assert finished_payload["result"]["data"] == "safe"
 
 
 @pytest.mark.asyncio

@@ -176,7 +176,11 @@ async def test_email_health_check():
 async def test_email_api_endpoints(client: AsyncClient):
     with patch("app.services.job_service.JobService.enqueue", return_value="mock-job-id"):
         token = await _register_and_login(client, "email_admin@example.com")
-        headers = {"Authorization": f"Bearer {token}"}
+        org_id = await _create_organization(client, token, "Email Admin Org")
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "X-Organization-Id": org_id,
+        }
 
         # GET /email/stats
         res_stats = await client.get("/email/stats", headers=headers)
@@ -206,6 +210,109 @@ async def test_email_api_endpoints(client: AsyncClient):
         res_health = await client.get("/health")
         assert res_health.status_code == 200
         assert "email" in res_health.json()
+
+
+async def test_cross_tenant_email_log_isolation(client: AsyncClient):
+    """Verify that Tenant B cannot see Tenant A's email logs."""
+    with patch("app.services.job_service.JobService.enqueue", return_value="mock-job-id"):
+        # Org A creates an email
+        token_a = await _register_and_login(client, "owner_a@example.com")
+        org_a_id = await _create_organization(client, token_a, "Org A")
+        headers_a = {"Authorization": f"Bearer {token_a}", "X-Organization-Id": org_a_id}
+
+        res_test = await client.post(
+            "/email/test",
+            json={
+                "to_email": "confidential_a@example.com",
+                "subject": "Confidential Org A Email",
+                "template_name": "welcome.html",
+            },
+            headers=headers_a,
+        )
+        assert res_test.status_code == 201
+        log_a_id = res_test.json()["id"]
+
+        # Org B checks their email logs
+        token_b = await _register_and_login(client, "owner_b@example.com")
+        org_b_id = await _create_organization(client, token_b, "Org B")
+        headers_b = {"Authorization": f"Bearer {token_b}", "X-Organization-Id": org_b_id}
+
+        res_logs_b = await client.get("/email/logs", headers=headers_b)
+        assert res_logs_b.status_code == 200
+        logs_b = res_logs_b.json()["logs"]
+        recipients_b = [l["recipient_email"] for l in logs_b]
+        assert "confidential_a@example.com" not in recipients_b
+
+        # Org B attempts to retry Org A's email log -> 404 (ownership check)
+        res_retry = await client.post(f"/email/logs/{log_a_id}/retry", headers=headers_b)
+        assert res_retry.status_code == 404
+
+
+async def test_email_test_endpoint_production_mode_disabled(client: AsyncClient):
+    """Verify that in production mode, /email/test is disabled with 403."""
+    with patch("app.services.job_service.JobService.enqueue", return_value="mock-job-id"):
+        token = await _register_and_login(client, "prod_admin@example.com")
+        org_id = await _create_organization(client, token, "Prod Org")
+        headers = {"Authorization": f"Bearer {token}", "X-Organization-Id": org_id}
+        settings = get_settings()
+
+        with (
+            patch.object(settings, "environment", "production"),
+            patch.object(settings, "email_mode", "production"),
+        ):
+            res_test = await client.post(
+                "/email/test",
+                json={
+                    "to_email": "spam_target@example.com",
+                    "subject": "Test",
+                    "template_name": "welcome.html",
+                },
+                headers=headers,
+            )
+            assert res_test.status_code == 403
+            assert "disabled in production" in res_test.text
+
+
+async def test_email_endpoints_require_owner_or_admin_role(client: AsyncClient):
+    """Verify that regular members cannot list email logs or send test emails."""
+    with patch("app.services.job_service.JobService.enqueue", return_value="mock-job-id"):
+        owner_token = await _register_and_login(client, "owner_email_perm@example.com")
+        org_id = await _create_organization(client, owner_token, "Perm Org")
+        owner_headers = {"Authorization": f"Bearer {owner_token}", "X-Organization-Id": org_id}
+
+        # Add member
+        invite_res = await client.post(
+            f"/organizations/{org_id}/invite",
+            json={"email": "member_email_perm@example.com"},
+            headers=owner_headers,
+        )
+        invite_token = invite_res.json()["token"]
+
+        member_token = await _register_and_login(client, "member_email_perm@example.com")
+        await client.post(
+            "/invitations/accept",
+            json={"token": invite_token},
+            headers={"Authorization": f"Bearer {member_token}"},
+        )
+
+        member_headers = {"Authorization": f"Bearer {member_token}", "X-Organization-Id": org_id}
+
+        # Member attempts to get stats -> 403
+        res_stats = await client.get("/email/stats", headers=member_headers)
+        assert res_stats.status_code == 403
+        assert "Insufficient permissions" in res_stats.text
+
+        # Member attempts to list logs -> 403
+        res_logs = await client.get("/email/logs", headers=member_headers)
+        assert res_logs.status_code == 403
+
+        # Member attempts to send test email -> 403
+        res_test = await client.post(
+            "/email/test",
+            json={"to_email": "target@example.com", "subject": "Test", "template_name": "welcome.html"},
+            headers=member_headers,
+        )
+        assert res_test.status_code == 403
 
 
 async def test_development_mode_invitation_fallback(client: AsyncClient):

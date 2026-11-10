@@ -297,9 +297,17 @@ class MembershipService:
 
         # Target -> owner
         await self.repo.update_role(target_membership.id, MembershipRole.OWNER)
-        # Enqueue background search indexing updates for both memberships
+
+        # Update Organization.owner_id on the organizations table
+        from app.modules.organizations.repository import OrganizationRepository
+        await OrganizationRepository(self.db).update_owner(organization_id, target_membership.user_id)
+
+        # Enqueue background search indexing updates for both memberships and the organization
         self.job_service.enqueue(index_member_task, str(current_owner_membership.id))
         self.job_service.enqueue(index_member_task, str(target_membership.id))
+        from app.jobs.tasks import index_organization_task
+        self.job_service.enqueue(index_organization_task, str(organization_id))
+
         await AuditLogService(self.db).create_event(
             organization_id=organization_id,
             actor_user_id=requester_user_id,
@@ -312,7 +320,9 @@ class MembershipService:
                 "new_owner_membership_id": str(target_membership.id),
             },
         )
-        # Invalidate both users' organization list cache
+        # Invalidate both users' organization list cache and organization cache
         for user_id in [requester_user_id, target_membership.user_id]:
             cache_key = CacheKeyBuilder.user(str(user_id))
             await self.cache.delete(cache_key)
+        org_cache_key = CacheKeyBuilder.organization(str(organization_id))
+        await self.cache.delete(org_cache_key)
