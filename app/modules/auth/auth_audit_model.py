@@ -31,6 +31,7 @@ class AuthEventType(str, enum.Enum):
     SESSION_REVOKED = "SESSION_REVOKED"
     SESSION_EXPIRED = "SESSION_EXPIRED"
     NEW_DEVICE_LOGIN = "NEW_DEVICE_LOGIN"
+    PASSWORD_CHANGE = "PASSWORD_CHANGE"
 
 
 class AuthAuditLog(Base):

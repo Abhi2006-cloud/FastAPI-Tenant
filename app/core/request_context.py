@@ -9,22 +9,26 @@ Inject into routes via Depends(get_request_info).
 """
 
 from fastapi import Request
+from app.core.config import get_settings
 
 
-def get_client_ip(request: Request) -> str | None:
+def get_client_ip(request: Request) -> str:
     """
     Return the real client IP.
 
-    Prefers X-Forwarded-For (set by reverse proxies / load balancers).
-    Falls back to request.client.host for direct connections.
+    Behind Render or reverse proxies, the client IP is in X-Forwarded-For.
+    We take the left-most entry when TRUSTED_PROXY_COUNT >= 1.
+    Falls back to request.client.host or '127.0.0.1'.
     """
+    settings = get_settings()
     forwarded_for = request.headers.get("X-Forwarded-For")
-    if forwarded_for:
-        # Header may be a comma-separated list; first entry is the real client
-        return forwarded_for.split(",")[0].strip()
-    if request.client:
+    if forwarded_for and settings.trusted_proxy_count > 0:
+        ips = [ip.strip() for ip in forwarded_for.split(",") if ip.strip()]
+        if ips:
+            return ips[0]
+    if request.client and request.client.host:
         return request.client.host
-    return None
+    return "127.0.0.1"
 
 
 def get_user_agent(request: Request) -> str | None:

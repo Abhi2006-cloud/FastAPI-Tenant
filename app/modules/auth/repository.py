@@ -33,3 +33,8 @@ class UserRepository:
         await self.db.flush()
         await self.db.refresh(user)
         return user
+
+    async def save(self, user: User) -> User:
+        await self.db.flush()
+        await self.db.refresh(user)
+        return user

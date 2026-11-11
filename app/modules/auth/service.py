@@ -28,7 +28,8 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
-from app.core.exceptions import ConflictError, ForbiddenError, UnauthorizedError
+from app.core.exceptions import BadRequestError, ConflictError, ForbiddenError, NotFoundError, UnauthorizedError
+from app.core.redis import RedisClient
 from app.core.security import (
     create_access_token,
     generate_refresh_token,
@@ -54,6 +55,20 @@ class AuthService:
         self.repo = UserRepository(db)
         self.session_repo = SessionRepository(db)
         self.audit_repo = AuthAuditRepository(db)
+
+    async def _revoke_sid_in_redis(self, sids: UUID | str | list[UUID | str]) -> None:
+        """Store session id(s) in Redis revocation blacklist for the access token TTL."""
+        if not isinstance(sids, list):
+            sids = [sids]
+        settings = get_settings()
+        ttl = settings.access_token_expire_minutes * 60
+        try:
+            client = await RedisClient.get_client()
+            for sid in sids:
+                if sid:
+                    await client.setex(f"revoked_session:{sid}", ttl, "1")
+        except Exception as exc:
+            logger.warning("Failed to store revoked session in Redis (failing open): %s", exc)
 
     # ── Registration ─────────────────────────────────────────────────────────
 
@@ -121,7 +136,7 @@ class AuthService:
         )
 
         # ── Generate access token ─────────────────────────────────────────────
-        access_token = create_access_token(user.id)
+        access_token = create_access_token(user.id, session_id=session.id)
 
         # ── Audit log ─────────────────────────────────────────────────────────
         await self.audit_repo.create_event(
@@ -227,6 +242,7 @@ class AuthService:
                     ip_address,
                 )
                 await self.session_repo.revoke(session)
+                await self._revoke_sid_in_redis(session.id)
                 await self.audit_repo.create_event(
                     user_id=session.user_id,
                     event_type=AuthEventType.REPLAY_ATTACK,
@@ -256,7 +272,7 @@ class AuthService:
 
 
         # ── Issue new access token ────────────────────────────────────────────
-        new_access_token = create_access_token(session.user_id)
+        new_access_token = create_access_token(session.user_id, session_id=session.id)
 
         # ── Audit ─────────────────────────────────────────────────────────────
         await self.audit_repo.create_event(
@@ -287,6 +303,7 @@ class AuthService:
             return
 
         await self.session_repo.revoke(session)
+        await self._revoke_sid_in_redis(session.id)
 
         await self.audit_repo.create_event(
             user_id=session.user_id,
@@ -320,9 +337,13 @@ class AuthService:
             if current_session and not current_session.is_revoked:
                 current_session_id = current_session.id
 
+        active_sessions = await self.session_repo.list_active_by_user(user_id)
+        sids_to_revoke = [s.id for s in active_sessions if s.id != current_session_id]
+
         count = await self.session_repo.revoke_all_for_user(
             user_id, except_session_id=current_session_id
         )
+        await self._revoke_sid_in_redis(sids_to_revoke)
 
         await self.audit_repo.create_event(
             user_id=user_id,
@@ -385,6 +406,7 @@ class AuthService:
             return  # idempotent
 
         await self.session_repo.revoke(session)
+        await self._revoke_sid_in_redis(session.id)
 
         await self.audit_repo.create_event(
             user_id=requesting_user_id,
@@ -392,6 +414,49 @@ class AuthService:
             session_id=session_id,
             ip_address=ip_address,
             user_agent=user_agent,
+        )
+
+    # ── Change Password (G7) ──────────────────────────────────────────────────
+
+    async def change_password(
+        self,
+        user_id: UUID,
+        current_password: str,
+        new_password: str,
+        *,
+        current_session_id: UUID | None = None,
+        ip_address: str | None = None,
+        user_agent: str | None = None,
+    ) -> None:
+        """G7: Verify current password, enforce length rules, revoke all other sessions and tokens."""
+        user = await self.repo.get_by_id(user_id)
+        if user is None:
+            raise NotFoundError("User not found")
+
+        if not verify_password(current_password, user.password_hash):
+            raise BadRequestError("Current password is incorrect")
+
+        if len(new_password) < 8:
+            raise BadRequestError("New password must be at least 8 characters")
+
+        user.password_hash = hash_password(new_password)
+        await self.repo.save(user)
+
+        # Revoke all active sessions for user in database and Redis (clean invalidation)
+        active_sessions = await self.session_repo.list_active_by_user(user_id)
+        sids_to_revoke = [s.id for s in active_sessions]
+        if current_session_id and current_session_id not in sids_to_revoke:
+            sids_to_revoke.append(current_session_id)
+        await self.session_repo.revoke_all_for_user(user_id)
+        await self._revoke_sid_in_redis(sids_to_revoke)
+
+        await self.audit_repo.create_event(
+            user_id=user_id,
+            event_type=AuthEventType.PASSWORD_CHANGE,
+            session_id=current_session_id,
+            ip_address=ip_address,
+            user_agent=user_agent,
+            metadata={"revoked_other_sessions": len(sids_to_revoke)},
         )
 
     # ── get_current_user (used by dependencies.py) ───────────────────────────

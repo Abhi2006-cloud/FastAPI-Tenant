@@ -23,6 +23,13 @@ class UserRegister(BaseModel):
     password: str = Field(min_length=8, max_length=128)
 
 
+class ChangePasswordRequest(BaseModel):
+    """POST /auth/change-password body."""
+
+    current_password: str
+    new_password: str = Field(min_length=8, max_length=128)
+
+
 class UserLogin(BaseModel):
     """POST /auth/login body."""
 

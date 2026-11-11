@@ -11,6 +11,7 @@ Flow:
 
 import hashlib
 import secrets
+import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID
@@ -34,14 +35,23 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
     return pwd_context.verify(plain_password, hashed_password)
 
 
-def create_access_token(subject: str | UUID, expires_delta: timedelta | None = None) -> str:
+def create_access_token(
+    subject: str | UUID,
+    session_id: str | UUID | None = None,
+    expires_delta: timedelta | None = None,
+) -> str:
     """Build a signed JWT. subject is the user's id (stored as 'sub' in the payload)."""
     expire = datetime.now(UTC) + (
         expires_delta
         if expires_delta is not None
         else timedelta(minutes=settings.access_token_expire_minutes)
     )
-    to_encode: dict[str, Any] = {"sub": str(subject), "exp": expire}
+    to_encode: dict[str, Any] = {
+        "sub": str(subject),
+        "exp": expire,
+        "jti": str(uuid.uuid4()),
+        "sid": str(session_id) if session_id else str(uuid.uuid4()),
+    }
     return jwt.encode(to_encode, settings.secret_key, algorithm=settings.algorithm)
 
 

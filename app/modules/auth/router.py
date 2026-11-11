@@ -19,13 +19,17 @@ from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Request, status
+from fastapi.security import HTTPAuthorizationCredentials
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.core.dependencies import get_current_user
+from app.core.dependencies import get_current_user, security_scheme
+from app.core.rate_limit import rate_limit
 from app.core.request_context import RequestInfo, get_request_info
+from app.core.security import decode_access_token
 from app.modules.auth.models import User
 from app.modules.auth.schemas import (
+    ChangePasswordRequest,
     LogoutAllRequest,
     LogoutRequest,
     RefreshRequest,
@@ -40,7 +44,12 @@ from app.modules.auth.service import AuthService
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 
-@router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/register",
+    response_model=UserResponse,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(rate_limit("auth_register", 5, 3600, key="ip"))],
+)
 async def register(
     data: UserRegister,
     db: Annotated[AsyncSession, Depends(get_db)],
@@ -48,7 +57,11 @@ async def register(
     return await AuthService(db).register(data)
 
 
-@router.post("/login", response_model=TokenResponse)
+@router.post(
+    "/login",
+    response_model=TokenResponse,
+    dependencies=[Depends(rate_limit("auth_login", 10, 60, key="ip"))],
+)
 async def login(
     data: UserLogin,
     db: Annotated[AsyncSession, Depends(get_db)],
@@ -77,7 +90,11 @@ async def me(current_user: Annotated[User, Depends(get_current_user)]) -> User:
     return current_user
 
 
-@router.post("/refresh", response_model=TokenResponse)
+@router.post(
+    "/refresh",
+    response_model=TokenResponse,
+    dependencies=[Depends(rate_limit("auth_refresh", 30, 60, key="ip"))],
+)
 async def refresh(
     data: RefreshRequest,
     db: Annotated[AsyncSession, Depends(get_db)],
@@ -175,3 +192,32 @@ async def revoke_session(
         ip_address=request_info.ip_address,
         user_agent=request_info.user_agent,
     )
+
+
+@router.post("/change-password", status_code=status.HTTP_204_NO_CONTENT)
+async def change_password(
+    data: ChangePasswordRequest,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
+    request_info: Annotated[RequestInfo, Depends(get_request_info)],
+    credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(security_scheme)],
+) -> None:
+    """G7: Change user password. Verifies current password, revokes all other sessions and tokens."""
+    current_sid = None
+    if credentials:
+        try:
+            payload = decode_access_token(credentials.credentials)
+            sid_str = payload.get("sid")
+            current_sid = UUID(sid_str) if sid_str else None
+        except Exception:
+            current_sid = None
+
+    await AuthService(db).change_password(
+        user_id=current_user.id,
+        current_password=data.current_password,
+        new_password=data.new_password,
+        current_session_id=current_sid,
+        ip_address=request_info.ip_address,
+        user_agent=request_info.user_agent,
+    )
+
