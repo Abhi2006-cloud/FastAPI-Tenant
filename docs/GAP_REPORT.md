@@ -28,7 +28,7 @@ This document maps all Phase 2 backend engineering requirements (Tasks 2.1–2.6
 | **G6** | Delete Organization with Confirmation | `DELETE /organizations/{org_id}` | Requires `{ "name": "<exact_org_name>" }` in request body. Owner only. Cascades file blobs, memberships, invites, audit logs. Records `ORGANIZATION_DELETED`. | `app/tests/test_org_lifecycle.py::test_delete_organization_cascade_and_name_check` |
 | **G7** | Change Password with Session Revocation | `POST /auth/change-password` | Verifies current password, enforces >= 8 characters, updates password hash, revokes all sessions in DB & Redis, returns 204. | `app/tests/test_password.py::test_change_password_and_token_invalidation`<br>`app/tests/test_phase2_coverage.py` |
 | **G8** | Streaming Audit Export & Injection Guard | `GET /audit-logs/export` | Gated by `require_feature("audit_export")`. Streams CSV response. Sanitizes formulas (`=`, `+`, `-`, `@`, `\t`, `\r`) with single quote prefix. | `app/tests/test_audit_export.py::test_audit_export_feature_gate_and_csv_sanitization` |
-| **G9** | Platform Admin Route Isolation | `POST /email/test`<br>`GET /jobs*` | Restricted strictly to `PLATFORM_ADMIN_EMAILS`. Regular tenant owners and members receive HTTP 403 Forbidden. | `app/tests/test_admin_endpoint_isolation.py::test_platform_admin_access_allowed_and_forbidden` |
+| **G9** | Platform Admin Route Isolation & Tenant Email Scoping | `POST /email/test`<br>`GET /email/logs`<br>`GET /email/stats`<br>`POST /email/logs/{id}/retry`<br>`GET /jobs*` | Restricted to `PLATFORM_ADMIN_EMAILS` or active org owner/admin. Email logs/stats strictly isolated to active tenant. User A cannot read Tenant B logs/stats. | `app/tests/test_admin_endpoint_isolation.py`<br>`app/tests/test_email.py::test_cross_tenant_email_log_isolation`<br>`app/tests/test_email.py::test_email_endpoints_require_owner_or_admin_role` |
 | **G10** | Remove Dead Job / Document Upload Task | `app/jobs/tasks.py` | Removed obsolete `process_invitation_task`. Documented active `process_file_upload_task` with docstring explaining storage processing. | Code inspected and verified in `app/jobs/tasks.py`. |
 | **G11** | Double-Accept Race Condition Guard | `POST /invitations/accept` | Pre-checks if user is already a member of target organization before updating status, preventing duplicate memberships or race conflicts. | `app/tests/test_phase2_coverage.py::test_invitation_service_edge_cases` |
 
@@ -49,4 +49,42 @@ Migration `20260802_0008_phase2_plans_and_demo.py` adds:
    - `message`: `VARCHAR(1000)`, nullable.
    - `status`: `VARCHAR(32)`, default `'pending'`, non-nullable.
    - `created_at`: `DateTime(timezone=True)`, default server timestamp.
+
+---
+
+## 4. Phase 2.5 Verification & Hardening
+
+1. **Enum Audit (Alembic 20260802_0009)**:
+   - `AuditAction`: Stored as `VARCHAR(64)` via `native_enum=False`.
+   - `InvitationStatus`: Stored as `VARCHAR(32)` via `native_enum=False`.
+   - `MembershipRole`: Stored as `VARCHAR(6)` via `native_enum=False`.
+   - `AuthEventType`: Stored as `VARCHAR(64)` with `PASSWORD_CHANGE` present.
+   - `EmailStatus`: Native PostgreSQL enum `emailstatus` (`QUEUED`, `PROCESSING`, `SENT`, `FAILED`, `CANCELLED`).
+   - Migration `20260802_0009_enum_audit_and_values.py` safeguards PostgreSQL native enums if created, and runs cleanly on SQLite and PostgreSQL.
+
+2. **Real PostgreSQL Verification**:
+   - Migrations run from empty -> `downgrade -1` -> `upgrade head` against local PostgreSQL.
+   - Verified end-to-end via HTTP requests against live server:
+     - Register -> Login -> Create Org.
+     - `GET /audit-logs/export` on Free plan returns `402 PLAN_FEATURE_LOCKED`.
+     - 5-member limit on Free plan enforced (`402 PLAN_LIMIT_REACHED` on overflow).
+     - Revoke invitation via `DELETE /organizations/{id}/invitations/{inv_id}` returns 200 with status `revoked`.
+     - Platform admin plan update via `PATCH /admin/organizations/{id}/plan` upgrades org to `pro`.
+     - Verified `PLAN_CHANGED` audit log row recorded in PostgreSQL.
+     - 12 rapid logins triggers `429 Too Many Requests` with `Retry-After`.
+     - Logout invalidates session in Redis; subsequent request with access token returns `401 Unauthorized` (`Session has been revoked`).
+
+3. **Proxy IP Derivation**:
+   - Real client IP derived from `X-Forwarded-For` using index `-settings.trusted_proxy_count` (preventing spoofed extra header prefixes from altering rate limit buckets).
+   - Tests in `app/tests/test_proxy_ip.py`.
+
+4. **Basic Search Endpoint (`GET /search/basic`)**:
+   - Layered `router -> service -> repository` implementation in `app/modules/search/`.
+   - Case-insensitive matching across `files` (`file_name`), `members` (`email`), and `audit_logs` (`action`, `resource_type`) strictly scoped to active `organization_id`.
+   - Plan rate-limited (`search_basic`, 60/min/org).
+   - Operates when `SEARCH_ENABLED=false` without Meilisearch.
+   - Tests in `app/tests/test_search_basic.py`.
+
+5. **Automated Test Suite Status**:
+   - Total passing tests: **213 passed** in `app/tests/`.
 

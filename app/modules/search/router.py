@@ -2,16 +2,48 @@ from typing import Annotated, Any, Dict
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.core.database import get_db
 from app.core.dependencies import get_current_membership, get_current_user, get_organization_id_header
 from app.core.exceptions import ForbiddenError
+from app.core.rate_limit import rate_limit
 from app.infrastructure.search.client import MeilisearchException, MeilisearchUnavailableException
 from app.infrastructure.search.service import SearchService
 from app.modules.auth.models import User
 from app.modules.memberships.models import Membership
 from app.modules.search.schemas import GlobalSearchResponse, SearchResponse
+from app.modules.search.service import BasicSearchService
 
 router = APIRouter(prefix="/search", tags=["search"])
 search_service = SearchService()
+
+
+@router.get(
+    "/basic",
+    response_model=GlobalSearchResponse,
+    dependencies=[Depends(rate_limit("search_basic", 60, 60, key="org"))],
+)
+async def basic_search(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    organization_id: Annotated[UUID, Depends(get_organization_id_header)],
+    _: Annotated[Membership, Depends(get_current_membership)],
+    q: str = Query(..., min_length=1, description="Search query string"),
+    limit: int = Query(10, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+) -> Any:
+    """Basic SQL-backed case-insensitive search across files, members, and audit logs.
+
+    Operates strictly within the tenant boundary and functions even when
+    external search engines (Meilisearch) are disabled.
+    """
+    service = BasicSearchService(db)
+    return await service.search_basic(
+        organization_id=organization_id,
+        query=q,
+        limit=limit,
+        offset=offset,
+    )
 
 def handle_search_exception(exc: Exception) -> None:
     """Standard handler to gracefully catch Meilisearch exceptions and return HTTP 503."""

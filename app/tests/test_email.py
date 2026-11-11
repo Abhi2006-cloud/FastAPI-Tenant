@@ -247,6 +247,11 @@ async def test_cross_tenant_email_log_isolation(client: AsyncClient):
         res_retry = await client.post(f"/email/logs/{log_a_id}/retry", headers=headers_b)
         assert res_retry.status_code == 404
 
+        # Org B's stats should not count Org A's emails (total_emails == 0)
+        res_stats_b = await client.get("/email/stats", headers=headers_b)
+        assert res_stats_b.status_code == 200
+        assert res_stats_b.json()["total_emails"] == 0
+
 
 async def test_email_test_endpoint_production_mode_disabled(client: AsyncClient):
     """Verify that in production mode, /email/test is disabled with 403."""
@@ -313,6 +318,14 @@ async def test_email_endpoints_require_owner_or_admin_role(client: AsyncClient):
             headers=member_headers,
         )
         assert res_test.status_code == 403
+
+        # Member attempts to retry email -> 403
+        import uuid
+        res_retry = await client.post(
+            f"/email/logs/{uuid.uuid4()}/retry",
+            headers=member_headers,
+        )
+        assert res_retry.status_code == 403
 
 
 async def test_development_mode_invitation_fallback(client: AsyncClient):

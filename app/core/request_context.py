@@ -16,8 +16,10 @@ def get_client_ip(request: Request) -> str:
     """
     Return the real client IP.
 
-    Behind Render or reverse proxies, the client IP is in X-Forwarded-For.
-    We take the left-most entry when TRUSTED_PROXY_COUNT >= 1.
+    Behind reverse proxies (e.g. Render, Cloudflare), each trusted proxy appends
+    the remote IP to the X-Forwarded-For header. The real client IP is selected
+    at index `-trusted_proxy_count` from the right, preventing client spoofing
+    where extra entries are prepended.
     Falls back to request.client.host or '127.0.0.1'.
     """
     settings = get_settings()
@@ -25,6 +27,8 @@ def get_client_ip(request: Request) -> str:
     if forwarded_for and settings.trusted_proxy_count > 0:
         ips = [ip.strip() for ip in forwarded_for.split(",") if ip.strip()]
         if ips:
+            if len(ips) >= settings.trusted_proxy_count:
+                return ips[-settings.trusted_proxy_count]
             return ips[0]
     if request.client and request.client.host:
         return request.client.host
