@@ -28,25 +28,25 @@ async def check_email_health(force_refresh: bool = False) -> Dict[str, Any]:
     mode = settings.effective_email_mode
     provider_name = settings.email_provider.lower()
 
+    if provider_name == "console" or mode == "console":
+        _HEALTH_CACHE.update({
+            "status": "console",
+            "provider": "console",
+            "email_mode": mode,
+            "last_checked": now,
+            "last_error": None,
+            "detail": "Console mode active (zero API quota consumption)",
+        })
+        return _HEALTH_CACHE
+
     if mode == "development":
         _HEALTH_CACHE.update({
             "status": "development",
-            "provider": provider_name if provider_name != "console" else "console",
+            "provider": provider_name,
             "email_mode": "development",
             "last_checked": now,
             "last_error": None,
             "detail": "Development mode active. Manual invitation links provided in responses/logs.",
-        })
-        return _HEALTH_CACHE
-
-    if mode == "console":
-        _HEALTH_CACHE.update({
-            "status": "console",
-            "provider": "console",
-            "email_mode": "console",
-            "last_checked": now,
-            "last_error": None,
-            "detail": "Console mode active (zero API quota consumption)",
         })
         return _HEALTH_CACHE
 

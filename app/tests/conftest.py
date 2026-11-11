@@ -21,6 +21,7 @@ get_settings.cache_clear()
 def force_test_settings():
     get_settings.cache_clear()
     settings = get_settings()
+    settings.environment = "test"
     settings.job_sync_mode = True
     settings.expose_invitation_tokens = True
     settings.email_mode = "development"
@@ -62,6 +63,11 @@ def mock_redis_for_tests():
 
     mock_sync_redis = AsyncMock()
 
+    async def _mock_check_search_health(*args, **kwargs):
+        if not get_settings().is_search_enabled:
+            return "disabled"
+        return "connected"
+
     with (
         patch("app.core.redis.RedisClient.get_client", return_value=mock_client),
         patch("app.core.redis.RedisClient.health_check", return_value=True),
@@ -77,7 +83,7 @@ def mock_redis_for_tests():
         ),
         patch("app.jobs.search_tasks.search_service.index_document", new=AsyncMock(return_value={"status": "ok"})),
         patch("app.jobs.search_tasks.search_service.delete_document", new=AsyncMock(return_value={"status": "ok"})),
-        patch("app.infrastructure.search.health.check_search_health", new=AsyncMock(return_value="connected")),
+        patch("app.infrastructure.search.health.check_search_health", side_effect=_mock_check_search_health),
     ):
 
         yield mock_client
@@ -98,6 +104,7 @@ async def db_engine():
 
     session_factory = async_sessionmaker(engine, expire_on_commit=False)
     with (
+        patch("app.core.database.engine", engine),
         patch("app.core.database.async_session_factory", session_factory),
         patch("app.jobs.search_tasks.async_session_factory", session_factory),
         patch("app.jobs.email_tasks.async_session_factory", session_factory),

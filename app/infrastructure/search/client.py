@@ -70,6 +70,8 @@ class SearchClient:
 
     def is_configured(self) -> bool:
         settings = get_settings()
+        if not settings.is_search_enabled:
+            return False
         url = settings.meilisearch_url
         key = settings.meilisearch_api_key
         if not url or not key:
@@ -117,7 +119,10 @@ class SearchClient:
             return False
 
     async def health_status(self) -> str:
-        """Returns 'connected' or 'unavailable' for health check metrics."""
+        """Returns 'connected', 'disabled', or 'unavailable' for health check metrics."""
+        settings = get_settings()
+        if not settings.is_search_enabled:
+            return "disabled"
         if not self.enabled or not self.is_configured():
             return "unavailable"
         

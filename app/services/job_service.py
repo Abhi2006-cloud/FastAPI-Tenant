@@ -52,6 +52,21 @@ class JobService:
     ) -> str:
         """Enqueue a job on the specified queue with tenant context. Returns job ID."""
         settings = get_settings()
+
+        # If search is disabled, skip search indexing/deleting tasks completely
+        search_tasks = {
+            "index_organization_task",
+            "index_member_task",
+            "index_file_task",
+            "index_audit_log_task",
+            "delete_organization_task",
+            "delete_member_task",
+            "delete_file_task",
+        }
+        if getattr(func, "__name__", "") in search_tasks and not settings.is_search_enabled:
+            logger.debug("Search disabled; skipping enqueue for %s", getattr(func, "__name__", ""))
+            return "search-disabled"
+
         if settings.job_sync_mode:
             self._execute_sync(func, *args, **kwargs)
             return "sync-mode"
