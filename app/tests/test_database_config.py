@@ -77,6 +77,15 @@ def test_sqlite_in_memory():
     assert "connect_args" not in engine_kwargs
 
 
+def test_standard_postgresql_scheme_normalized_to_asyncpg():
+    """Standard postgresql:// or postgres:// URLs (e.g. from Neon dashboard) are automatically normalized to asyncpg."""
+    raw_url = "postgresql://neondb_owner:npg_123@ep-cool-pooler.us-east-2.aws.neon.tech/neondb?sslmode=require"
+    cleaned_url, connect_args, _ = build_database_connection_params(raw_url)
+    assert cleaned_url.startswith("postgresql+asyncpg://")
+    assert connect_args.get("ssl") == "require"
+    assert connect_args.get("statement_cache_size") == 0
+
+
 def test_validate_production_settings_raises_on_weak_secret():
     from app.core.config import Settings
     s = Settings(

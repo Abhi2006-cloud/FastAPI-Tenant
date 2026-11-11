@@ -116,3 +116,4 @@ test.describe("Docs Layout & Responsive Viewport Verification", () => {
     await page.screenshot({ path: path.join(screensDir, "docs-email-after-mobile.png"), fullPage: true });
   });
 });
+

@@ -72,11 +72,15 @@ def build_database_connection_params(
 
         cleaned_query = urllib.parse.urlencode(query_params, doseq=True)
 
+    scheme = parsed.scheme
+    if scheme in ("postgres", "postgresql", "postgresql+psycopg2"):
+        scheme = "postgresql+asyncpg"
+
     cleaned_url = urllib.parse.urlunsplit(
-        (parsed.scheme, parsed.netloc, parsed.path, cleaned_query, parsed.fragment)
+        (scheme, parsed.netloc, parsed.path, cleaned_query, parsed.fragment)
     )
 
-    is_asyncpg = "asyncpg" in parsed.scheme or parsed.scheme.startswith("postgresql")
+    is_asyncpg = "asyncpg" in scheme or scheme.startswith("postgresql")
     if is_asyncpg and not is_sqlite:
         host = parsed.hostname or ""
         is_local = host in ("localhost", "127.0.0.1", "::1", "")
