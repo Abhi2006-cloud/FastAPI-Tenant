@@ -28,6 +28,11 @@ class Settings(BaseSettings):
     database_url: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/ai_workspace"
     alembic_database_url: str | None = None
 
+    # Database connection pool settings (Neon / PgBouncer compatibility)
+    db_pool_size: int = 3
+    db_max_overflow: int = 2
+    db_connect_timeout: float = 30.0
+
     secret_key: str = "change-me-to-a-long-random-secret-key-in-production"
     access_token_expire_minutes: int = 15
     algorithm: str = "HS256"
@@ -41,7 +46,8 @@ class Settings(BaseSettings):
     session_cleanup_interval_hours: int = 24
 
     upload_dir: str = "uploads"
-    max_upload_size_mb: int = 10
+    max_upload_size_mb: int = 2
+    storage_backend: str = "local"  # local | s3 | postgres
 
     # Optional S3 Cloud Storage
     s3_endpoint_url: str | None = None
@@ -61,6 +67,8 @@ class Settings(BaseSettings):
 
     # Background jobs (RQ)
     job_sync_mode: bool = False
+    embedded_worker: bool = False
+    embedded_worker_queues: str = "high,default,low,email"
     rq_job_timeout: int = 300
     rq_retry_max: int = 3
     rq_retry_intervals: str = "10,30,60"
@@ -68,6 +76,7 @@ class Settings(BaseSettings):
     rq_failure_ttl: int = 604800
 
     # Meilisearch
+    search_enabled: bool | None = None
     meilisearch_url: str | None = None
     meilisearch_api_key: str | None = None
     meilisearch_index_prefix: str = "ai_workspace"
@@ -79,18 +88,60 @@ class Settings(BaseSettings):
     email_from_name: str = "AI Workspace"
     email_from_address: str = "noreply@example.com"
     frontend_url: str = "http://localhost:8501"
-    allowed_origins: str = "*"
+    allowed_origins: str = ""
     email_queue_name: str = "email"
     email_max_retries: int = 5
     email_rate_limit_per_hour: int = 20
     expose_invitation_tokens: bool = False
 
     @property
+    def is_search_enabled(self) -> bool:
+        """True if search is explicitly enabled or configured with a valid URL."""
+        if self.search_enabled is not None:
+            return self.search_enabled
+        if not self.meilisearch_url:
+            return False
+        url = self.meilisearch_url.strip()
+        return bool(url and not url.startswith("<"))
+
+    @property
+    def embedded_worker_queue_list(self) -> list[str]:
+        """Parse comma-separated queues for the embedded worker."""
+        if not self.embedded_worker_queues:
+            return ["high", "default", "low", "email"]
+        return [q.strip() for q in self.embedded_worker_queues.split(",") if q.strip()]
+
+    @property
     def allowed_origins_list(self) -> list[str]:
         """Parse comma-separated allowed origins for CORS."""
-        if not self.allowed_origins or self.allowed_origins.strip() == "*":
+        if not self.allowed_origins or self.allowed_origins.strip() == "":
+            return [] if self.environment.lower() == "production" else ["*"]
+        if self.allowed_origins.strip() == "*":
             return ["*"]
         return [o.strip() for o in self.allowed_origins.split(",") if o.strip()]
+
+    def validate_production_settings(self) -> None:
+        """Fail-fast production configuration check."""
+        if self.environment.lower() != "production":
+            return
+
+        default_keys = {
+            "change-me-to-a-long-random-secret-key-in-production",
+            "<PRODUCTION_RANDOM_SECRET_KEY>",
+            "secret",
+        }
+        if not self.secret_key or self.secret_key in default_keys or len(self.secret_key) < 32:
+            raise ValueError(
+                "SECRET_KEY must be configured, must not be default, and must be at least 32 characters in production."
+            )
+
+        if not self.allowed_origins or self.allowed_origins.strip() == "*":
+            raise ValueError(
+                "ALLOWED_ORIGINS cannot be '*' or empty in production. Set explicit allowed domains."
+            )
+
+        if not self.database_url:
+            raise ValueError("DATABASE_URL must be configured in production.")
 
     @property
     def effective_email_mode(self) -> str:

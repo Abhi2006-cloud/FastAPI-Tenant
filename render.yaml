@@ -1,21 +1,22 @@
 # ==============================================================================
 # Render Infrastructure Blueprint (render.yaml)
-# AI Workspace SaaS v2.5.0 Production Architecture
+# AI Workspace SaaS Zero-Cost Deployment Architecture
 # ==============================================================================
 
 services:
   # ----------------------------------------------------------------------------
-  # 1. FastAPI Web Service (Production API)
+  # FastAPI Web Service (Production API + Embedded RQ Worker)
+  # Free tier service with Postgres BYTEA storage and Upstash Redis
   # ----------------------------------------------------------------------------
   - type: web
     name: ai-workspace-backend
     runtime: docker
     dockerfilePath: Dockerfile
-    plan: starter
+    plan: free
     region: oregon
-    healthCheckPath: /health
+    healthCheckPath: /health/live
     autoDeploy: true
-    startCommand: sh -c "alembic upgrade head && gunicorn -w 4 -k uvicorn.workers.UvicornWorker app.main:app --bind 0.0.0.0:$PORT"
+    startCommand: sh -c "alembic upgrade head && gunicorn -w ${WEB_CONCURRENCY:-1} -k uvicorn.workers.UvicornWorker app.main:app --bind 0.0.0.0:$PORT --timeout 120"
     envVars:
       - key: APP_NAME
         value: AI Workspace SaaS Backend
@@ -23,6 +24,8 @@ services:
         value: production
       - key: DEBUG
         value: "false"
+      - key: WEB_CONCURRENCY
+        value: "1"
       - key: DATABASE_URL
         sync: false
       - key: ALEMBIC_DATABASE_URL
@@ -30,102 +33,30 @@ services:
       - key: SECRET_KEY
         generateValue: true
       - key: ACCESS_TOKEN_EXPIRE_MINUTES
-        value: "60"
+        value: "15"
       - key: ALGORITHM
         value: HS256
       - key: REDIS_URL
         sync: false
-      - key: MEILISEARCH_URL
-        sync: false
-      - key: MEILISEARCH_API_KEY
-        sync: false
-      - key: MEILISEARCH_INDEX_PREFIX
-        value: ai_workspace
+      - key: EMBEDDED_WORKER
+        value: "true"
+      - key: EMBEDDED_WORKER_QUEUES
+        value: "high,default,low,email"
+      - key: JOB_SYNC_MODE
+        value: "false"
+      - key: SEARCH_ENABLED
+        value: "false"
       - key: EMAIL_MODE
-        value: production
+        value: development
       - key: EMAIL_PROVIDER
-        value: resend
-      - key: RESEND_API_KEY
-        sync: false
-      - key: EMAIL_FROM_NAME
-        value: AI Workspace
-      - key: EMAIL_FROM_ADDRESS
-        sync: false
-      - key: FRONTEND_URL
-        sync: false
-      - key: ALLOWED_ORIGINS
-        sync: false
-      - key: UPLOAD_DIR
-        value: uploads
+        value: console
+      - key: STORAGE_BACKEND
+        value: postgres
       - key: MAX_UPLOAD_SIZE_MB
-        value: "10"
+        value: "2"
       - key: INVITATION_EXPIRE_HOURS
         value: "72"
-
-  # ----------------------------------------------------------------------------
-  # 2. RQ Background Worker (Email, Search Indexing, Cleanup)
-  # ----------------------------------------------------------------------------
-  - type: worker
-    name: ai-workspace-rq-worker
-    runtime: docker
-    dockerfilePath: Dockerfile
-    plan: starter
-    region: oregon
-    autoDeploy: true
-    startCommand: python -m app.jobs.worker
-    envVars:
-      - key: APP_NAME
-        value: AI Workspace SaaS Worker
-      - key: ENVIRONMENT
-        value: production
-      - key: DEBUG
-        value: "false"
-      - key: DATABASE_URL
-        sync: false
-      - key: ALEMBIC_DATABASE_URL
-        sync: false
-      - key: SECRET_KEY
-        fromService:
-          type: web
-          name: ai-workspace-backend
-          property: SECRET_KEY
-      - key: REDIS_URL
-        sync: false
-      - key: MEILISEARCH_URL
-        sync: false
-      - key: MEILISEARCH_API_KEY
-        sync: false
-      - key: MEILISEARCH_INDEX_PREFIX
-        value: ai_workspace
-      - key: EMAIL_MODE
-        value: production
-      - key: EMAIL_PROVIDER
-        value: resend
-      - key: RESEND_API_KEY
-        sync: false
-      - key: EMAIL_FROM_NAME
-        value: AI Workspace
-      - key: EMAIL_FROM_ADDRESS
+      - key: ALLOWED_ORIGINS
         sync: false
       - key: FRONTEND_URL
         sync: false
-
-  # ----------------------------------------------------------------------------
-  # 3. React Static Site (Frontend SPA)
-  # ----------------------------------------------------------------------------
-  - type: static
-    name: ai-workspace-frontend
-    rootDir: frontend-react
-    buildCommand: npm ci && npm run build
-    publishPath: dist
-    autoDeploy: true
-    routes:
-      - type: rewrite
-        source: /*
-        destination: /index.html
-    envVars:
-      - key: VITE_API_BASE_URL
-        fromService:
-          type: web
-          name: ai-workspace-backend
-          property: host
