@@ -160,18 +160,19 @@ alembic upgrade head
 Start the 3 core backend & frontend services in separate terminal windows:
 
 ```bash
-# Terminal 1 — FastAPI Server
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+# Terminal 1 — FastAPI Server (with optional embedded background worker)
+EMBEDDED_WORKER=true uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 
-# Terminal 2 — RQ Background Worker
+# Terminal 2 (Optional) — Dedicated External RQ Worker (if EMBEDDED_WORKER=false)
 python -m app.jobs.worker
 
-# Terminal 3 — Streamlit Frontend Application
-cd frontend && streamlit run app.py
+# Terminal 3 — React Frontend (Vite)
+cd frontend-react && npm run dev
 ```
 
 - **Interactive API Documentation (Swagger)**: [http://localhost:8000/docs](http://localhost:8000/docs)
-- **Streamlit Frontend Dashboard**: [http://localhost:8501](http://localhost:8501)
+- **React Frontend**: [http://localhost:5173](http://localhost:5173)
+- **Deployment Guide**: See [docs/DEPLOY.md](file:///docs/DEPLOY.md) and [docs/FREE_TIER.md](file:///docs/FREE_TIER.md) for zero-cost deployment on Render, Neon, Upstash, and Vercel.
 
 ---
 
