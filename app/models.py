@@ -16,5 +16,7 @@ from app.modules.memberships.models import Membership  # noqa: F401
 from app.modules.organizations.models import Organization  # noqa: F401
 from app.modules.search.models import SearchIndexFailure  # noqa: F401
 from app.modules.email.models import EmailLog  # noqa: F401
+from app.modules.billing.models import UpgradeRequest  # noqa: F401
+
 
 

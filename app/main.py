@@ -27,6 +27,8 @@ from app.core.redis import RedisClient
 from app.middleware.tenant import TenantContextMiddleware
 from app.modules.audit.router import router as audit_router
 from app.modules.auth.router import router as auth_router
+from app.modules.billing.router import router as billing_router
+from app.modules.demo.router import router as demo_router
 from app.modules.email.router import router as email_router
 from app.modules.files.router import router as files_router
 from app.modules.invitations.router import router as invitations_router
@@ -111,6 +113,8 @@ app.add_middleware(TenantContextMiddleware)
 
 # Each module exposes an APIRouter; paths are defined inside each router.py
 app.include_router(auth_router)
+app.include_router(billing_router)
+app.include_router(demo_router)
 app.include_router(organizations_router)
 app.include_router(invitations_router)
 app.include_router(files_router)
