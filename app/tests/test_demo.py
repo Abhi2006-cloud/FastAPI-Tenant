@@ -84,3 +84,32 @@ async def test_demo_disabled_returns_404(client: AsyncClient, monkeypatch):
     res = await client.post("/demo/session")
     assert res.status_code == 404
     assert "Demo mode is disabled" in res.text
+
+
+@pytest.mark.asyncio
+async def test_demo_session_rate_limit_10_per_hour(client: AsyncClient):
+    """POST /demo/session is rate limited to 10/hour/IP."""
+    fixed_time = 1700000010.0
+    with patch("app.core.rate_limit.time.time", return_value=fixed_time), \
+         patch("app.services.job_service.JobService.enqueue", return_value="mock-job-id"):
+        # First 10 requests allowed
+        for i in range(10):
+            res = await client.post(
+                "/demo/session",
+                headers={"X-Forwarded-For": "198.51.100.42"},
+            )
+            assert res.status_code == 201, f"Failed at request {i+1}: {res.text}"
+            assert res.headers.get("X-RateLimit-Limit") == "10"
+
+        # 11th request triggers 429 RATE_LIMITED
+        limited_res = await client.post(
+            "/demo/session",
+            headers={"X-Forwarded-For": "198.51.100.42"},
+        )
+        assert limited_res.status_code == 429
+        assert limited_res.headers.get("X-RateLimit-Remaining") == "0"
+        assert "Retry-After" in limited_res.headers
+        assert limited_res.headers.get("X-RateLimit-Limit") == "10"
+        err = limited_res.json()["detail"]
+        assert err["code"] == "RATE_LIMITED"
+

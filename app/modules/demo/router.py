@@ -26,13 +26,13 @@ router = APIRouter(prefix="/demo", tags=["demo"])
     "/session",
     response_model=DemoSessionResponse,
     status_code=status.HTTP_201_CREATED,
-    dependencies=[Depends(rate_limit("demo_session", 3, 3600, key="ip"))],
+    dependencies=[Depends(rate_limit("demo_session", 10, 3600, key="ip"))],
 )
 async def create_demo_session(
     db: Annotated[AsyncSession, Depends(get_db)],
     request_info: Annotated[RequestInfo, Depends(get_request_info)],
 ) -> DemoSessionResponse:
-    """Launch an ephemeral, fully populated demo workspace. Rate limited 3/hour/IP."""
+    """Launch an ephemeral, fully populated demo workspace. Rate limited 10/hour/IP."""
     settings = get_settings()
     if not settings.demo_enabled:
         raise HTTPException(
