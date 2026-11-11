@@ -32,7 +32,7 @@ class FileService:
         self.db = db
         self.repo = FileRepository(db)
         self.membership_service = MembershipService(db)
-        self.storage = StorageService(Path(settings.upload_dir))
+        self.storage = StorageService(Path(settings.upload_dir), db=db)
         self.job_service = JobService()
 
     async def upload_file(
@@ -44,65 +44,98 @@ class FileService:
         await self.membership_service.ensure_member(user_id, organization_id)
 
         safe_name = validate_upload(upload)
-        storage_path = build_storage_path(organization_id, safe_name)
-        safe_storage_path = self.storage._validate_path(storage_path)
-        safe_storage_path.parent.mkdir(parents=True, exist_ok=True)
-
         current_settings = get_settings()
         chunk_size = 64 * 1024
         total_size = 0
         max_bytes = current_settings.max_upload_size_bytes
 
-        try:
-            with open(safe_storage_path, "wb") as f:
-                while True:
-                    chunk = await upload.read(chunk_size)
-                    if not chunk:
-                        break
-                    total_size += len(chunk)
-                    if total_size > max_bytes:
-                        raise BadRequestError(
-                            f"File exceeds maximum size of {current_settings.max_upload_size_mb} MB"
-                        )
-                    f.write(chunk)
+        if self.storage.backend == "postgres":
+            chunks: list[bytes] = []
+            while True:
+                chunk = await upload.read(chunk_size)
+                if not chunk:
+                    break
+                total_size += len(chunk)
+                if total_size > max_bytes:
+                    raise BadRequestError(
+                        f"File exceeds maximum size of {current_settings.max_upload_size_mb} MB"
+                    )
+                chunks.append(chunk)
 
             if total_size == 0:
-                if safe_storage_path.exists():
-                    safe_storage_path.unlink()
                 raise BadRequestError("Empty file")
 
-            # Mirror to S3 if enabled
-            if self.storage._s3_client and self.storage.settings.s3_bucket_name:
-                key = self.storage._s3_key(safe_storage_path)
-                with open(safe_storage_path, "rb") as f:
-                    self.storage._s3_client.put_object(
-                        Bucket=self.storage.settings.s3_bucket_name,
-                        Key=key,
-                        Body=f.read(),
-                    )
-        except Exception:
-            # Clean up partially written file on any error
-            if safe_storage_path.exists():
-                try:
-                    safe_storage_path.unlink()
-                except Exception:
-                    pass
-            raise
+            import uuid
+            file_id = uuid.uuid4()
+            storage_path = f"pg://{organization_id}/{file_id}"
+            file_content = b"".join(chunks)
 
-        try:
             record = FileRecord(
+                id=file_id,
                 organization_id=organization_id,
                 uploaded_by=user_id,
                 file_name=safe_name,
-                file_path=str(safe_storage_path),
+                file_path=storage_path,
                 file_size=total_size,
             )
             created = await self.repo.create(record)
+            await self.storage.save_blob(file_id, file_content)
             await self.db.commit()
-        except Exception:
-            # Clean up storage file if database persist fails to avoid orphaned files
-            self.storage.delete(safe_storage_path)
-            raise
+        else:
+            storage_path_obj = build_storage_path(organization_id, safe_name)
+            safe_storage_path = self.storage._validate_path(storage_path_obj)
+            safe_storage_path.parent.mkdir(parents=True, exist_ok=True)
+
+            try:
+                with open(safe_storage_path, "wb") as f:
+                    while True:
+                        chunk = await upload.read(chunk_size)
+                        if not chunk:
+                            break
+                        total_size += len(chunk)
+                        if total_size > max_bytes:
+                            raise BadRequestError(
+                                f"File exceeds maximum size of {current_settings.max_upload_size_mb} MB"
+                            )
+                        f.write(chunk)
+
+                if total_size == 0:
+                    if safe_storage_path.exists():
+                        safe_storage_path.unlink()
+                    raise BadRequestError("Empty file")
+
+                # Mirror to S3 if enabled
+                if self.storage._s3_client and self.storage.settings.s3_bucket_name:
+                    key = self.storage._s3_key(safe_storage_path)
+                    with open(safe_storage_path, "rb") as f:
+                        self.storage._s3_client.put_object(
+                            Bucket=self.storage.settings.s3_bucket_name,
+                            Key=key,
+                            Body=f.read(),
+                        )
+            except Exception:
+                # Clean up partially written file on any error
+                if safe_storage_path.exists():
+                    try:
+                        safe_storage_path.unlink()
+                    except Exception:
+                        pass
+                raise
+
+            try:
+                record = FileRecord(
+                    organization_id=organization_id,
+                    uploaded_by=user_id,
+                    file_name=safe_name,
+                    file_path=str(safe_storage_path),
+                    file_size=total_size,
+                )
+                created = await self.repo.create(record)
+                await self.db.commit()
+            except Exception:
+                # Clean up storage file if database persist fails to avoid orphaned files
+                self.storage.delete(safe_storage_path)
+                raise
 
         await AuditLogService(self.db).create_event(
             organization_id=organization_id,
@@ -124,8 +157,9 @@ class FileService:
                 organization_id=organization_id,
             )
         
-        # Enqueue search indexing task
-        self.job_service.enqueue(index_file_task, str(created.id), organization_id=organization_id)
+        # Enqueue search indexing task only if search enabled
+        if settings.is_search_enabled:
+            self.job_service.enqueue(index_file_task, str(created.id), organization_id=organization_id)
         return created
 
     async def list_files(self, user_id: UUID, organization_id: UUID) -> list[FileRecord]:
@@ -153,11 +187,10 @@ class FileService:
         """Download file content with organization membership verification."""
         file_record = await self.get_file(user_id, organization_id, file_id)
 
-        file_path = Path(file_record.file_path)
-        if not self.storage.exists(file_path):
+        if not await self.storage.async_exists(file_record.file_path):
             raise NotFoundError("File not found on storage")
 
-        content = self.storage.read(file_path)
+        content = await self.storage.async_read(file_record.file_path)
         await AuditLogService(self.db).create_event(
             organization_id=organization_id,
             actor_user_id=user_id,
@@ -193,13 +226,10 @@ class FileService:
             if file_record.uploaded_by != user_id:
                 raise ForbiddenError("You can only delete files you uploaded")
         
-        # Delete database record first to ensure DB integrity
+        # Delete storage blob/file first or delete database record
+        await self.storage.async_delete(file_record.file_path)
         await self.repo.delete(file_id)
         await self.db.commit()
-
-        # Delete physical file after DB record is safely committed
-        file_path = Path(file_record.file_path)
-        self.storage.delete(file_path)
 
         await AuditLogService(self.db).create_event(
             organization_id=organization_id,
@@ -211,8 +241,9 @@ class FileService:
         )
         await self.db.commit()
         
-        # Enqueue search deletion task
-        self.job_service.enqueue(delete_file_task, str(file_id), str(organization_id), organization_id=organization_id)
+        # Enqueue search deletion task only if search enabled
+        if settings.is_search_enabled:
+            self.job_service.enqueue(delete_file_task, str(file_id), str(organization_id), organization_id=organization_id)
 
     async def get_statistics(
         self, user_id: UUID, organization_id: UUID

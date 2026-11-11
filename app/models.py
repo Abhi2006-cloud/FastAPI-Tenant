@@ -10,6 +10,7 @@ from app.modules.auth.models import User  # noqa: F401
 from app.modules.auth.session_model import UserSession  # noqa: F401
 from app.modules.auth.auth_audit_model import AuthAuditLog  # noqa: F401
 from app.modules.files.models import FileRecord  # noqa: F401
+from app.modules.files.blob_model import FileBlob  # noqa: F401
 from app.modules.invitations.models import Invitation  # noqa: F401
 from app.modules.memberships.models import Membership  # noqa: F401
 from app.modules.organizations.models import Organization  # noqa: F401

@@ -91,8 +91,9 @@ def record_audit_event_task(
         
         # Enqueue search indexing task for the persisted audit log
         from app.services.job_service import JobService
-        from app.jobs.search_tasks import index_audit_log_task
-        JobService().enqueue(index_audit_log_task, result["audit_log_id"])
+        if settings.is_search_enabled:
+            from app.jobs.search_tasks import index_audit_log_task
+            JobService().enqueue(index_audit_log_task, result["audit_log_id"])
         
         return result
     except Exception as exc:
@@ -109,9 +110,8 @@ async def _process_file_upload(file_id: str, organization_id: str) -> dict:
         if str(record.organization_id) != organization_id:
             raise ValueError("File does not belong to organization")
 
-        storage = StorageService(Path(settings.upload_dir))
-        file_path = Path(record.file_path)
-        on_disk = storage.exists(file_path)
+        storage = StorageService(Path(settings.upload_dir), db=session)
+        on_disk = await storage.async_exists(record.file_path)
 
         metadata = {
             "file_id": str(record.id),

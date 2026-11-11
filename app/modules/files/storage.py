@@ -2,12 +2,15 @@
 FILES MODULE — storage.py
 
 Storage abstraction layer for file operations.
-Supports local disk storage and S3-compatible cloud storage (Cloudflare R2, AWS S3, etc.).
+Supports local disk storage, S3-compatible cloud storage, and PostgreSQL BYTEA blob storage.
 """
 
 import logging
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
+from uuid import UUID
+
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 
@@ -15,11 +18,12 @@ logger = logging.getLogger(__name__)
 
 
 class StorageService:
-    """Storage abstraction for file operations with optional S3 cloud backend."""
+    """Storage abstraction for file operations with local, S3, and postgres backends."""
     
-    def __init__(self, base_path: Path) -> None:
+    def __init__(self, base_path: Path, db: Optional[AsyncSession] = None) -> None:
         base_path.mkdir(parents=True, exist_ok=True)
         self.base_path = base_path.resolve()
+        self.db = db
         self.settings = get_settings()
         self._s3_client = None
         
@@ -38,6 +42,132 @@ class StorageService:
             except Exception as e:
                 logger.warning("Failed to initialize S3 client: %s. Falling back to local storage.", e)
                 self._s3_client = None
+
+    @property
+    def backend(self) -> str:
+        """Select storage backend: 'postgres' | 's3' | 'local'."""
+        configured = (getattr(self.settings, "storage_backend", None) or "local").lower()
+        if configured in ("postgres", "postgresql", "pg"):
+            return "postgres"
+        if configured == "s3" or self.is_s3_enabled():
+            return "s3"
+        return "local"
+
+    @staticmethod
+    def is_pg_path(file_path: Path | str) -> bool:
+        """Check if path is a PostgreSQL pseudo-path ('pg://<org_id>/<file_id>')."""
+        return str(file_path).startswith("pg://")
+
+    @staticmethod
+    def parse_pg_path(file_path: Path | str) -> tuple[str, UUID]:
+        """Extract organization_id and file_id from a postgres pseudo-path."""
+        raw = str(file_path)
+        if not raw.startswith("pg://"):
+            raise ValueError(f"Invalid postgres storage path: {raw}")
+        parts = raw[5:].split("/")
+        if len(parts) != 2:
+            raise ValueError(f"Invalid postgres storage path format: {raw}")
+        return parts[0], UUID(parts[1])
+
+    async def save_blob(self, file_id: UUID, content: bytes) -> None:
+        """Persist binary blob directly into the PostgreSQL file_blobs table."""
+        if self.db is None:
+            raise RuntimeError("Database session required for postgres storage backend")
+        from app.modules.files.blob_model import FileBlob
+        blob = FileBlob(file_id=file_id, content=content)
+        self.db.add(blob)
+        await self.db.flush()
+
+    async def read_blob(self, file_id: UUID) -> bytes:
+        """Retrieve binary blob from PostgreSQL file_blobs table."""
+        if self.db is None:
+            raise RuntimeError("Database session required for postgres storage backend")
+        from app.modules.files.blob_model import FileBlob
+        from sqlalchemy import select
+        result = await self.db.execute(select(FileBlob.content).where(FileBlob.file_id == file_id))
+        content = result.scalar_one_or_none()
+        if content is None:
+            raise FileNotFoundError(f"Blob not found for file_id: {file_id}")
+        return content
+
+    async def delete_blob(self, file_id: UUID) -> bool:
+        """Delete binary blob from PostgreSQL file_blobs table."""
+        if self.db is None:
+            raise RuntimeError("Database session required for postgres storage backend")
+        from app.modules.files.blob_model import FileBlob
+        from sqlalchemy import delete
+        result = await self.db.execute(delete(FileBlob).where(FileBlob.file_id == file_id))
+        return bool(result.rowcount and result.rowcount > 0)
+
+    async def exists_blob(self, file_id: UUID) -> bool:
+        """Check if binary blob exists in PostgreSQL file_blobs table."""
+        if self.db is None:
+            raise RuntimeError("Database session required for postgres storage backend")
+        from app.modules.files.blob_model import FileBlob
+        from sqlalchemy import select, func
+        result = await self.db.execute(
+            select(func.count()).select_from(FileBlob).where(FileBlob.file_id == file_id)
+        )
+        count = result.scalar() or 0
+        return count > 0
+
+    async def get_blob_size(self, file_id: UUID) -> int:
+        """Get binary blob size in bytes from PostgreSQL file_blobs table."""
+        if self.db is None:
+            raise RuntimeError("Database session required for postgres storage backend")
+        from app.modules.files.blob_model import FileBlob
+        from sqlalchemy import select, func
+        result = await self.db.execute(
+            select(func.length(FileBlob.content)).where(FileBlob.file_id == file_id)
+        )
+        size = result.scalar_one_or_none()
+        if size is None:
+            raise FileNotFoundError(f"Blob not found for file_id: {file_id}")
+        return size
+
+    async def async_save(
+        self,
+        file_path: Path | str,
+        content: bytes,
+        file_id: Optional[UUID] = None,
+    ) -> str:
+        """Unified async save supporting postgres, S3, and local storage."""
+        if self.backend == "postgres" or self.is_pg_path(file_path):
+            fid = file_id
+            if fid is None and self.is_pg_path(file_path):
+                _, fid = self.parse_pg_path(file_path)
+            if fid is None:
+                raise ValueError("file_id required for postgres storage backend")
+            await self.save_blob(fid, content)
+            return str(file_path)
+
+        p = Path(file_path) if isinstance(file_path, str) else file_path
+        self.save(p, content)
+        return str(file_path)
+
+    async def async_read(self, file_path: Path | str) -> bytes:
+        """Unified async read supporting postgres, S3, and local storage."""
+        if self.is_pg_path(file_path):
+            _, fid = self.parse_pg_path(file_path)
+            return await self.read_blob(fid)
+        p = Path(file_path) if isinstance(file_path, str) else file_path
+        return self.read(p)
+
+    async def async_delete(self, file_path: Path | str) -> bool:
+        """Unified async delete supporting postgres, S3, and local storage."""
+        if self.is_pg_path(file_path):
+            _, fid = self.parse_pg_path(file_path)
+            return await self.delete_blob(fid)
+        p = Path(file_path) if isinstance(file_path, str) else file_path
+        return self.delete(p)
+
+    async def async_exists(self, file_path: Path | str) -> bool:
+        """Unified async exists check supporting postgres, S3, and local storage."""
+        if self.is_pg_path(file_path):
+            _, fid = self.parse_pg_path(file_path)
+            return await self.exists_blob(fid)
+        p = Path(file_path) if isinstance(file_path, str) else file_path
+        return self.exists(p)
 
     def _validate_path(self, file_path: Path) -> Path:
         """
