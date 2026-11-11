@@ -62,3 +62,4 @@ describe("ColdStartBanner", () => {
     expect(screen.queryByRole("status")).toBeNull();
   });
 });
+

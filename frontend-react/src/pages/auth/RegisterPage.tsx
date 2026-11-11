@@ -31,8 +31,10 @@ export const RegisterPage: React.FC = () => {
       await register(email, password);
       navigate("/o/new");
     } catch (err: unknown) {
-      const axiosErr = err as { response?: { data?: { detail?: string } } };
-      setError(axiosErr.response?.data?.detail || "Registration failed. Email may already be in use.");
+      const axiosErr = err as { response?: { data?: { detail?: string | { code?: string; retry_after?: number } } } };
+      const d = axiosErr.response?.data?.detail;
+      const msg = typeof d === "string" ? d : (d?.code ? `Rate limit exceeded. Retry in ${d.retry_after}s.` : "Registration failed. Email may already be in use.");
+      setError(msg);
     } finally {
       setLoading(false);
     }
@@ -45,8 +47,10 @@ export const RegisterPage: React.FC = () => {
       const demoRes = await startDemoSession();
       navigate(`/o/${demoRes.organization_id}/overview`);
     } catch (err: unknown) {
-      const axiosErr = err as { response?: { data?: { detail?: string } } };
-      setError(axiosErr.response?.data?.detail || "Could not provision demo session.");
+      const axiosErr = err as { response?: { data?: { detail?: string | { code?: string; retry_after?: number } } } };
+      const d = axiosErr.response?.data?.detail;
+      const msg = typeof d === "string" ? d : (d?.code ? `Rate limit exceeded. Retry in ${d.retry_after}s.` : "Could not provision demo session.");
+      setError(msg);
     } finally {
       setDemoLoading(false);
     }

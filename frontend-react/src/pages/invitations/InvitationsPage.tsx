@@ -269,3 +269,4 @@ export const InvitationsPage: React.FC = () => {
     </div>
   );
 };
+

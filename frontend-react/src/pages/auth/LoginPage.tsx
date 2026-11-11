@@ -35,8 +35,10 @@ export const LoginPage: React.FC = () => {
         navigate("/o/new");
       }
     } catch (err: unknown) {
-      const axiosErr = err as { response?: { data?: { detail?: string } } };
-      setError(axiosErr.response?.data?.detail || "Invalid credentials. Please check your email and password.");
+      const axiosErr = err as { response?: { data?: { detail?: string | { code?: string; retry_after?: number } } } };
+      const d = axiosErr.response?.data?.detail;
+      const msg = typeof d === "string" ? d : (d?.code ? `Rate limit exceeded. Retry in ${d.retry_after}s.` : "Invalid credentials. Please check your email and password.");
+      setError(msg);
     } finally {
       setLoading(false);
     }
@@ -49,8 +51,10 @@ export const LoginPage: React.FC = () => {
       const demoRes = await startDemoSession();
       navigate(`/o/${demoRes.organization_id}/overview`);
     } catch (err: unknown) {
-      const axiosErr = err as { response?: { data?: { detail?: string } } };
-      setError(axiosErr.response?.data?.detail || "Could not provision demo session. Please try again.");
+      const axiosErr = err as { response?: { data?: { detail?: string | { code?: string; retry_after?: number } } } };
+      const d = axiosErr.response?.data?.detail;
+      const msg = typeof d === "string" ? d : (d?.code ? `Rate limit exceeded. Retry in ${d.retry_after}s.` : "Could not provision demo session. Please try again.");
+      setError(msg);
     } finally {
       setDemoLoading(false);
     }

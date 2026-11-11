@@ -101,3 +101,4 @@ describe("FeatureGate Component (4 States)", () => {
     expect(screen.getByText(/Coming soon/i)).toBeInTheDocument();
   });
 });
+

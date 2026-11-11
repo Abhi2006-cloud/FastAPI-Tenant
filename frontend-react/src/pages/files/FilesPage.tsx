@@ -134,9 +134,8 @@ export const FilesPage: React.FC = () => {
           }
         }}
         onClick={() => fileInputRef.current?.click()}
-        className={`bg-white border-2 border-dashed rounded-[6px] p-8 text-center cursor-pointer transition-colors ${
-          isDragging ? "border-[#0F766E] bg-[#F0FDFA]" : "border-[#E4E4E7] hover:border-[#A1A1AA]"
-        }`}
+        className={`bg-white border-2 border-dashed rounded-[6px] p-8 text-center cursor-pointer transition-colors ${isDragging ? "border-[#0F766E] bg-[#F0FDFA]" : "border-[#E4E4E7] hover:border-[#A1A1AA]"
+          }`}
       >
         <input
           ref={fileInputRef}

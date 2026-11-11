@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useParams } from "react-router-dom";
 import { Lock, Info, AlertCircle } from "lucide-react";
 import * as Tooltip from "@radix-ui/react-tooltip";
 import { useQuery } from "@tanstack/react-query";
@@ -14,7 +14,8 @@ interface FeatureGateProps {
 }
 
 export const FeatureGate: React.FC<FeatureGateProps> = ({ feature, children, fallback }) => {
-  const orgId = getActiveOrgId();
+  const params = useParams<{ orgId?: string }>();
+  const orgId = params.orgId || getActiveOrgId();
   const [dialogOpen, setDialogOpen] = useState(false);
 
   const { data: entitlements, isLoading } = useQuery<EntitlementsResponse>({

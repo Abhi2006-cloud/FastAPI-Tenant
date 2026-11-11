@@ -148,3 +148,4 @@ export const UpgradeDialog: React.FC<UpgradeDialogProps> = ({ data, open, onOpen
     </Dialog.Root>
   );
 };
+

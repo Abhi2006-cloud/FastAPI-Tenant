@@ -49,9 +49,8 @@ export const BillingPage: React.FC = () => {
             return (
               <div
                 key={p.id}
-                className={`bg-white rounded-[6px] p-6 flex flex-col justify-between border ${
-                  isCurrent ? "border-2 border-[#0F766E] shadow-sm" : "border-[#E4E4E7]"
-                }`}
+                className={`bg-white rounded-[6px] p-6 flex flex-col justify-between border ${isCurrent ? "border-2 border-[#0F766E] shadow-sm" : "border-[#E4E4E7]"
+                  }`}
               >
                 <div className="space-y-4">
                   <div className="flex items-center justify-between">

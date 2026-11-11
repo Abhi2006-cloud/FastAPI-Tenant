@@ -215,10 +215,9 @@ export const AppLayout: React.FC = () => {
                   key={item.label}
                   to={item.to}
                   className={({ isActive }) =>
-                    `flex items-center gap-2.5 px-2.5 py-1.5 rounded-[6px] text-[13px] font-medium transition-colors ${
-                      isActive
-                        ? "bg-[#F0FDFA] text-[#0F766E]"
-                        : "text-[#52525B] hover:text-[#18181B] hover:bg-[#F4F4F5]"
+                    `flex items-center gap-2.5 px-2.5 py-1.5 rounded-[6px] text-[13px] font-medium transition-colors ${isActive
+                      ? "bg-[#F0FDFA] text-[#0F766E]"
+                      : "text-[#52525B] hover:text-[#18181B] hover:bg-[#F4F4F5]"
                     }`
                   }
                 >
@@ -234,10 +233,9 @@ export const AppLayout: React.FC = () => {
             <NavLink
               to="/platform"
               className={({ isActive }) =>
-                `flex items-center gap-2.5 px-2.5 py-1.5 rounded-[6px] text-[13px] font-medium transition-colors ${
-                  isActive
-                    ? "bg-[#F0FDFA] text-[#0F766E]"
-                    : "text-[#52525B] hover:text-[#18181B] hover:bg-[#F4F4F5]"
+                `flex items-center gap-2.5 px-2.5 py-1.5 rounded-[6px] text-[13px] font-medium transition-colors ${isActive
+                  ? "bg-[#F0FDFA] text-[#0F766E]"
+                  : "text-[#52525B] hover:text-[#18181B] hover:bg-[#F4F4F5]"
                 }`
               }
             >
@@ -247,10 +245,9 @@ export const AppLayout: React.FC = () => {
             <NavLink
               to="/docs/search"
               className={({ isActive }) =>
-                `flex items-center gap-2.5 px-2.5 py-1.5 rounded-[6px] text-[13px] font-medium transition-colors ${
-                  isActive
-                    ? "bg-[#F0FDFA] text-[#0F766E]"
-                    : "text-[#52525B] hover:text-[#18181B] hover:bg-[#F4F4F5]"
+                `flex items-center gap-2.5 px-2.5 py-1.5 rounded-[6px] text-[13px] font-medium transition-colors ${isActive
+                  ? "bg-[#F0FDFA] text-[#0F766E]"
+                  : "text-[#52525B] hover:text-[#18181B] hover:bg-[#F4F4F5]"
                 }`
               }
             >
@@ -260,10 +257,9 @@ export const AppLayout: React.FC = () => {
             <NavLink
               to="/docs/email"
               className={({ isActive }) =>
-                `flex items-center gap-2.5 px-2.5 py-1.5 rounded-[6px] text-[13px] font-medium transition-colors ${
-                  isActive
-                    ? "bg-[#F0FDFA] text-[#0F766E]"
-                    : "text-[#52525B] hover:text-[#18181B] hover:bg-[#F4F4F5]"
+                `flex items-center gap-2.5 px-2.5 py-1.5 rounded-[6px] text-[13px] font-medium transition-colors ${isActive
+                  ? "bg-[#F0FDFA] text-[#0F766E]"
+                  : "text-[#52525B] hover:text-[#18181B] hover:bg-[#F4F4F5]"
                 }`
               }
             >
