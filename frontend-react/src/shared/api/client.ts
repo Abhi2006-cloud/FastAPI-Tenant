@@ -1,58 +1,139 @@
-import axios, { AxiosError, InternalAxiosRequestConfig } from 'axios';
-import { storage } from '../utils/storage';
+import axios, { type AxiosError, type InternalAxiosRequestConfig } from "axios";
+import type { PlanUpgradeErrorData } from "./types.ts";
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api';
+let inMemoryAccessToken: string | null = null;
+let activeOrgId: string | null = null;
+
+const REFRESH_TOKEN_KEY = "saas_refresh_token";
+
+export function getAccessToken(): string | null {
+  return inMemoryAccessToken;
+}
+
+export function setAccessToken(token: string | null): void {
+  inMemoryAccessToken = token;
+}
+
+export function getRefreshToken(): string | null {
+  return localStorage.getItem(REFRESH_TOKEN_KEY);
+}
+
+export function setRefreshToken(token: string | null): void {
+  if (token) {
+    localStorage.setItem(REFRESH_TOKEN_KEY, token);
+  } else {
+    localStorage.removeItem(REFRESH_TOKEN_KEY);
+  }
+}
+
+export function setActiveOrgId(orgId: string | null): void {
+  activeOrgId = orgId;
+}
+
+export function getActiveOrgId(): string | null {
+  return activeOrgId;
+}
+
+// Global Event listeners for Cross-Cutting Layer
+type UpgradeListener = (data: PlanUpgradeErrorData) => void;
+type RateLimitListener = (retryAfter: number) => void;
+type AuthListener = () => void;
+
+let upgradeListener: UpgradeListener | null = null;
+let rateLimitListener: RateLimitListener | null = null;
+let authListener: AuthListener | null = null;
+
+export function onPlanUpgradeRequired(fn: UpgradeListener | null): void {
+  upgradeListener = fn;
+}
+
+export function onRateLimited(fn: RateLimitListener | null): void {
+  rateLimitListener = fn;
+}
+
+export function onUnauthorized(fn: AuthListener | null): void {
+  authListener = fn;
+}
+
+const apiBaseUrl = (import.meta as unknown as { env?: { VITE_API_BASE_URL?: string } }).env?.VITE_API_BASE_URL || "http://localhost:8000";
 
 export const apiClient = axios.create({
-  baseURL: API_BASE_URL,
+  baseURL: apiBaseUrl,
   headers: {
-    'Content-Type': 'application/json',
+    "Content-Type": "application/json",
   },
 });
 
+// Single-flight refresh token queue
 let isRefreshing = false;
 let failedQueue: Array<{
-  resolve: (value?: unknown) => void;
-  reject: (reason?: unknown) => void;
+  resolve: (token: string) => void;
+  reject: (err: unknown) => void;
 }> = [];
 
-const processQueue = (error: AxiosError | null, token: string | null = null) => {
-  failedQueue.forEach((promise) => {
+function processQueue(error: unknown, token: string | null = null) {
+  failedQueue.forEach((prom) => {
     if (error) {
-      promise.reject(error);
-    } else {
-      promise.resolve(token);
+      prom.reject(error);
+    } else if (token) {
+      prom.resolve(token);
     }
   });
   failedQueue = [];
-};
+}
 
-// Request interceptor to attach Bearer Token and X-Organization-Id
-apiClient.interceptors.request.use(
-  (config: InternalAxiosRequestConfig) => {
-    const token = storage.getAccessToken();
-    if (token && config.headers) {
-      config.headers.Authorization = `Bearer ${token}`;
-    }
+// Request Interceptor: Attach Auth & X-Organization-Id
+apiClient.interceptors.request.use((config: InternalAxiosRequestConfig) => {
+  if (inMemoryAccessToken) {
+    config.headers.set("Authorization", `Bearer ${inMemoryAccessToken}`);
+  }
+  if (activeOrgId && !config.headers.has("X-Organization-Id")) {
+    config.headers.set("X-Organization-Id", activeOrgId);
+  }
+  return config;
+});
 
-    const orgId = storage.getActiveOrgId();
-    if (orgId && config.headers) {
-      config.headers['X-Organization-Id'] = orgId;
-    }
-
-    return config;
-  },
-  (error) => Promise.reject(error)
-);
-
-// Response interceptor to automatically handle 401 Unauthorized token rotation
+// Response Interceptor: 401 Single-Flight Refresh, 402 Upgrade, 429 Rate Limit
 apiClient.interceptors.response.use(
   (response) => response,
   async (error: AxiosError) => {
     const originalRequest = error.config as InternalAxiosRequestConfig & { _retry?: boolean };
 
-    if (error.response?.status === 401 && !originalRequest._retry) {
-      if (originalRequest.url?.includes('/auth/login') || originalRequest.url?.includes('/auth/register')) {
+    // 402 Payment Required: Plan feature locked or limit reached
+    if (error.response?.status === 402) {
+      const data = error.response.data as { detail?: PlanUpgradeErrorData } | PlanUpgradeErrorData;
+      const upgradeData = (data && "detail" in data ? data.detail : data) as PlanUpgradeErrorData;
+      if (upgradeData && upgradeListener) {
+        upgradeListener(upgradeData);
+      }
+      return Promise.reject(error);
+    }
+
+    // 429 Too Many Requests: Rate Limited
+    if (error.response?.status === 429) {
+      const retryAfterHeader = error.response.headers["retry-after"];
+      const detail = error.response.data as { detail?: { retry_after?: number } };
+      const retryAfter = detail?.detail?.retry_after ?? (retryAfterHeader ? parseInt(retryAfterHeader, 10) : 60);
+      if (rateLimitListener) {
+        rateLimitListener(retryAfter);
+      }
+      return Promise.reject(error);
+    }
+
+    // 401 Unauthorized: Attempt Single-Flight Token Refresh
+    if (error.response?.status === 401 && originalRequest && !originalRequest._retry) {
+      // If the failed request was itself the refresh endpoint, don't loop
+      if (originalRequest.url?.includes("/auth/refresh") || originalRequest.url?.includes("/auth/login")) {
+        setAccessToken(null);
+        setRefreshToken(null);
+        if (authListener) authListener();
+        return Promise.reject(error);
+      }
+
+      const refreshToken = getRefreshToken();
+      if (!refreshToken) {
+        setAccessToken(null);
+        if (authListener) authListener();
         return Promise.reject(error);
       }
 
@@ -61,9 +142,7 @@ apiClient.interceptors.response.use(
           failedQueue.push({ resolve, reject });
         })
           .then((token) => {
-            if (originalRequest.headers) {
-              originalRequest.headers.Authorization = `Bearer ${token}`;
-            }
+            originalRequest.headers.set("Authorization", `Bearer ${token}`);
             return apiClient(originalRequest);
           })
           .catch((err) => Promise.reject(err));
@@ -72,38 +151,29 @@ apiClient.interceptors.response.use(
       originalRequest._retry = true;
       isRefreshing = true;
 
-      const refreshToken = storage.getRefreshToken();
-      if (!refreshToken) {
-        isRefreshing = false;
-        storage.clearAuth();
-        window.dispatchEvent(new Event('auth:session_expired'));
-        return Promise.reject(error);
-      }
-
       try {
-        const response = await axios.post(`${API_BASE_URL}/auth/refresh`, {
-          refresh_token: refreshToken,
-        });
+        const res = await axios.post<{ access_token: string; refresh_token?: string }>(
+          `${apiBaseUrl}/auth/refresh`,
+          { refresh_token: refreshToken },
+          { headers: { "Content-Type": "application/json" } }
+        );
 
-        const { access_token, refresh_token: new_refresh_token, session_id } = response.data;
-
-        storage.setAccessToken(access_token);
-        storage.setRefreshToken(new_refresh_token);
-        if (session_id) {
-          storage.setSessionId(session_id);
+        const newAccessToken = res.data.access_token;
+        setAccessToken(newAccessToken);
+        if (res.data.refresh_token) {
+          setRefreshToken(res.data.refresh_token);
         }
 
-        if (originalRequest.headers) {
-          originalRequest.headers.Authorization = `Bearer ${access_token}`;
-        }
+        processQueue(null, newAccessToken);
 
-        processQueue(null, access_token);
+        originalRequest.headers.set("Authorization", `Bearer ${newAccessToken}`);
         return apiClient(originalRequest);
-      } catch (refreshError) {
-        processQueue(refreshError as AxiosError, null);
-        storage.clearAuth();
-        window.dispatchEvent(new Event('auth:session_expired'));
-        return Promise.reject(refreshError);
+      } catch (refreshErr) {
+        processQueue(refreshErr, null);
+        setAccessToken(null);
+        setRefreshToken(null);
+        if (authListener) authListener();
+        return Promise.reject(refreshErr);
       } finally {
         isRefreshing = false;
       }
