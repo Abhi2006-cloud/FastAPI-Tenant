@@ -187,6 +187,9 @@ pytest
 # Run tests with verbose output
 pytest -v
 
+# Run tests with coverage across modules and core
+pytest --cov=app/modules --cov=app/core
+
 # Run specific module tests
 pytest app/tests/test_protected_routes.py
 pytest app/tests/test_search.py
@@ -206,18 +209,43 @@ The repository includes a automated GitHub Actions workflow defined in [`.github
 
 ## 🌐 Complete API Reference
 
-### 🔑 Authentication (`/auth`)
+### 🔑 Authentication & Sessions (`/auth`)
 | Method | Endpoint | Description | Auth Required |
 | :--- | :--- | :--- | :--- |
 | `POST` | `/auth/register` | Register a new user account | ❌ No |
 | `POST` | `/auth/login` | Authenticate user & receive JWT access token | ❌ No |
+| `POST` | `/auth/refresh` | Rotate refresh token & receive new access token | ❌ No |
 | `GET` | `/auth/me` | Retrieve profile of authenticated user | 🔐 Bearer JWT |
+| `POST` | `/auth/logout` | Revoke active session in DB and Redis | 🔐 Bearer JWT |
+| `POST` | `/auth/logout-all` | Revoke all active sessions across all devices | 🔐 Bearer JWT |
+| `POST` | `/auth/change-password` | Change password & invalidate all other sessions | 🔐 Bearer JWT |
+| `GET` | `/auth/sessions` | List active sessions with current device flag | 🔐 Bearer JWT |
+| `DELETE` | `/auth/sessions/{id}` | Remote revocation of specific session | 🔐 Bearer JWT |
+
+### 💳 Plans & Billing (`/plans`, `/organizations/{org_id}`, `/admin`)
+| Method | Endpoint | Description | Auth Required |
+| :--- | :--- | :--- | :--- |
+| `GET` | `/plans` | List available plans, limits, and feature availability | ❌ No |
+| `GET` | `/platform/limits` | Infrastructure free-tier constraints and limits | ❌ No |
+| `GET` | `/organizations/{org_id}/entitlements` | Real-time usage, limits, and feature access | 🔐 Bearer + Org Member |
+| `POST` | `/organizations/{org_id}/upgrade-request` | Request plan upgrade from workspace owner/admin | 🔐 Bearer + Admin/Owner |
+| `GET` | `/admin/upgrade-requests` | List tenant upgrade requests | 🔐 Platform Admin |
+| `PATCH` | `/admin/organizations/{org_id}/plan` | Update organization subscription tier | 🔐 Platform Admin |
+
+### 🚀 Ephemeral Demo (`/demo`)
+| Method | Endpoint | Description | Auth Required |
+| :--- | :--- | :--- | :--- |
+| `POST` | `/demo/session` | Create zero-cost ephemeral workspace with demo fixtures | ❌ No (Rate-limited) |
+| `POST` | `/demo/upgrade` | Instant evaluation upgrade to Pro tier for demo workspaces | 🔐 Bearer (Demo Owner) |
 
 ### 🏢 Organizations & Multi-Tenancy (`/organizations`)
 | Method | Endpoint | Description | Auth Required |
 | :--- | :--- | :--- | :--- |
 | `POST` | `/organizations` | Create a new organization/tenant | 🔐 Bearer JWT |
-| `GET` | `/organizations/my` | List all organizations the user belongs to | 🔐 Bearer JWT |
+| `GET` | `/organizations/my` | List all organizations caller belongs to with role & count | 🔐 Bearer JWT |
+| `GET` | `/organizations/{org_id}` | Organization detail with caller role & member count | 🔐 Bearer + Org Member |
+| `POST` | `/organizations/{org_id}/leave` | Member leaves organization voluntarily | 🔐 Bearer + Member/Admin |
+| `DELETE` | `/organizations/{org_id}` | Delete organization with exact name confirmation | 🔐 Bearer + Org Owner |
 | `GET` | `/organizations/{org_id}/members` | List members of an organization | 🔐 Bearer + Org Member |
 | `PATCH` | `/organizations/{org_id}/members/{id}/role` | Update member role (`owner` only) | 🔐 Bearer + Org Owner |
 | `DELETE` | `/organizations/{org_id}/members/{id}` | Remove member from organization | 🔐 Bearer + Org Owner |
@@ -226,13 +254,15 @@ The repository includes a automated GitHub Actions workflow defined in [`.github
 ### ✉️ Invitations (`/invitations`)
 | Method | Endpoint | Description | Auth Required |
 | :--- | :--- | :--- | :--- |
-| `POST` | `/organizations/{org_id}/invite` | Create & send invitation token | 🔐 Bearer + Admin/Owner |
-| `POST` | `/invitations/accept` | Accept team invitation token | 🔐 Bearer JWT |
+| `POST` | `/organizations/{org_id}/invite` | Create & send invitation (manual token on Free tier) | 🔐 Bearer + Admin/Owner |
+| `GET` | `/organizations/{org_id}/invitations` | List organization invitations with optional status filter | 🔐 Bearer + Admin/Owner |
+| `DELETE` | `/organizations/{org_id}/invitations/{id}` | Revoke pending invitation | 🔐 Bearer + Admin/Owner |
+| `POST` | `/invitations/accept` | Accept team invitation token (with double-accept guard) | 🔐 Bearer JWT |
 
 ### 📁 Files (`/files`) — *Requires `X-Organization-Id` Header*
 | Method | Endpoint | Description | Auth Required |
 | :--- | :--- | :--- | :--- |
-| `POST` | `/files/upload` | Upload file to organization storage | 🔐 Bearer + Org Member |
+| `POST` | `/files/upload` | Upload file to storage (quota enforced) | 🔐 Bearer + Org Member |
 | `GET` | `/files` | List all files in active organization | 🔐 Bearer + Org Member |
 | `GET` | `/files/stats` | Retrieve file usage statistics | 🔐 Bearer + Org Member |
 | `GET` | `/files/{file_id}` | Get detailed file metadata | 🔐 Bearer + Org Member |
@@ -242,15 +272,17 @@ The repository includes a automated GitHub Actions workflow defined in [`.github
 ### 📜 Audit Logs (`/audit-logs`) — *Requires `X-Organization-Id` Header*
 | Method | Endpoint | Description | Auth Required |
 | :--- | :--- | :--- | :--- |
-| `GET` | `/audit-logs` | Query paginated audit events with filters | 🔐 Bearer + Org Member |
+| `GET` | `/audit-logs` | Query paginated audit events with plan-bounded history | 🔐 Bearer + Org Member |
+| `GET` | `/audit-logs/export` | Stream CSV audit log export with formula sanitization | 🔐 Bearer + Feature Gated |
 | `GET` | `/audit-logs/search` | Search audit log metadata and actions | 🔐 Bearer + Org Member |
 
 ### ⚙️ Background Jobs & Health (`/jobs`, `/health`)
 | Method | Endpoint | Description | Auth Required |
 | :--- | :--- | :--- | :--- |
 | `GET` | `/health` | System health status (DB, Redis, RQ Worker, Search) | ❌ No |
-| `GET` | `/jobs` | List background job execution status | 🔐 Bearer JWT |
-| `GET` | `/jobs/{job_id}` | Retrieve detailed job result / error payload | 🔐 Bearer JWT |
+| `GET` | `/health/live` | Instant liveness probe for UptimeRobot / Render keep-alive | ❌ No |
+| `GET` | `/jobs` | List background job execution status | 🔐 Platform Admin |
+| `GET` | `/jobs/{job_id}` | Retrieve detailed job result / error payload | 🔐 Platform Admin |
 
 ---
 

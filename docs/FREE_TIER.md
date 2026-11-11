@@ -103,3 +103,24 @@ Running an RQ worker typically incurs Redis polling traffic. To keep command con
 | **Email (Resend)**| **Console Mode** (`EMAIL_PROVIDER=console`) | Real email delivery requires a paid or custom verified domain. In console mode, invitation tokens and verification links are output directly to backend logs and API payloads without degrading `/health`. |
 | **Disk Storage** | **PostgreSQL Backend** (`STORAGE_BACKEND=postgres`)| Render free tier disks are wiped on container restart. Files are persisted as binary `BYTEA` blobs in the PostgreSQL `file_blobs` table (max 2 MB per file via `MAX_UPLOAD_SIZE_MB=2`), ensuring uploads survive redeployments and spin-downs. |
 
+---
+
+## 6. Redis Rate Limiting & Token Revocation Command Budget
+
+Phase 2 introduces Redis-backed fixed-window rate limiting and access token revocation. To respect Upstash free-tier limits:
+
+### Rate Limiting Overhead
+- **Algorithm**: Fixed-window counter with atomic Redis pipeline (`INCR` + `EXPIRE NX`).
+- **Cost**: Exactly **2 Redis commands per rate-limited request** within a single network round-trip.
+- **Key Schema**: `rl:{name}:{subject}:{window_index}` where `subject` is IP address, user UUID, or organization UUID.
+- **TTL**: Automatically expires at `window_seconds + 5` (e.g. 65 seconds for `/min` limits, 3605 seconds for `/hour` limits).
+- **Storage Footprint**: Each key is under 60 bytes. At peak burst (e.g., 500 concurrent users), active keys occupy `< 50 KB`, well within the Upstash 250 MB ceiling.
+- **Fail-Open Semantics**: If Redis latency spikes or the connection drops, rate limiting logs a warning and allows the request through rather than returning 500/503 errors.
+
+### Access Token Revocation Overhead
+- **Revocation Check**: Every authenticated request evaluates `revoked_session:{sid}` via `RedisClient.exists()`.
+- **Cost**: 1 `EXISTS` command per authenticated request.
+- **TTL**: Blacklist keys are set with `ex=settings.access_token_expire_minutes * 60` (15 minutes default). Once the JWT expires naturally, the Redis blacklist key is automatically evicted.
+- **Storage Footprint**: Revoked sessions consume ~40 bytes per entry. Even 1,000 revoked sessions occupy `< 50 KB`.
+- **Fail-Open Semantics**: Blacklist checks fail open on Redis errors so that authentication remains available if Redis restarts.
+
