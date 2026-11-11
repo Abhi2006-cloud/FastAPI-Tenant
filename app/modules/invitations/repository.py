@@ -2,7 +2,7 @@
 
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.invitations.models import Invitation, InvitationStatus
@@ -37,6 +37,25 @@ class InvitationRepository:
             )
         )
         return result.scalar_one_or_none()
+
+    async def list_by_organization(
+        self, organization_id: UUID, status: InvitationStatus | None = None
+    ) -> list[Invitation]:
+        query = select(Invitation).where(Invitation.organization_id == organization_id)
+        if status is not None:
+            query = query.where(Invitation.status == status)
+        query = query.order_by(desc(Invitation.expires_at))
+        result = await self.db.execute(query)
+        return list(result.scalars().all())
+
+    async def count_pending_by_organization(self, organization_id: UUID) -> int:
+        result = await self.db.execute(
+            select(func.count(Invitation.id)).where(
+                Invitation.organization_id == organization_id,
+                Invitation.status == InvitationStatus.PENDING,
+            )
+        )
+        return result.scalar() or 0
 
     async def create(self, invitation: Invitation) -> Invitation:
         self.db.add(invitation)

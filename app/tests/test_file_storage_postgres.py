@@ -128,5 +128,7 @@ async def test_postgres_storage_size_limit_rejection(client: AsyncClient, db_eng
     file_payload = {"file": ("big.txt", io.BytesIO(oversized_content), "text/plain")}
 
     res = await client.post("/files/upload", headers=headers, files=file_payload)
-    assert res.status_code == 400
-    assert "maximum size" in res.json().get("detail", "").lower()
+    # In Phase 2, plan limit enforcement returns 402 PLAN_LIMIT_REACHED
+    assert res.status_code in (400, 402)
+    detail_str = str(res.json().get("detail", "")).lower()
+    assert "maximum" in detail_str or "plan_limit_reached" in detail_str

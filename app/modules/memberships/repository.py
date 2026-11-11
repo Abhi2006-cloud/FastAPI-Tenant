@@ -6,7 +6,7 @@ get_by_user_and_org is the core query for tenant isolation checks.
 
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
 
@@ -34,6 +34,12 @@ class MembershipRepository:
             )
         )
         return result.scalar_one_or_none()
+
+    async def count_by_organization(self, organization_id: UUID) -> int:
+        result = await self.db.execute(
+            select(func.count(Membership.id)).where(Membership.organization_id == organization_id)
+        )
+        return result.scalar() or 0
 
     async def list_by_organization(
         self, organization_id: UUID

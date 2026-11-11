@@ -12,8 +12,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.core.dependencies import (
     get_current_membership,
-    get_current_user,
     get_organization_id_header,
+    require_platform_admin,
     require_roles,
 )
 from app.modules.auth.models import User
@@ -26,11 +26,11 @@ router = APIRouter(prefix="/jobs", tags=["jobs"])
 @router.get("/{job_id}")
 async def get_job_status(
     job_id: str,
-    _: Annotated[User, Depends(get_current_user)],
+    _: Annotated[User, Depends(require_platform_admin)],
     organization_id: Annotated[UUID, Depends(get_organization_id_header)],
     __: Annotated[Membership, Depends(require_roles(MembershipRole.OWNER, MembershipRole.ADMIN))],
 ) -> dict:
-    """Return status and metadata for a background job scoped to the active organization."""
+    """Return status and metadata for a background job scoped to the active organization. Platform admin only."""
     job = JobService().get_job(job_id, organization_id=str(organization_id))
     if job is None:
         raise HTTPException(status_code=404, detail="Job not found")
@@ -39,14 +39,14 @@ async def get_job_status(
 
 @router.get("")
 async def list_jobs(
-    _: Annotated[User, Depends(get_current_user)],
+    _: Annotated[User, Depends(require_platform_admin)],
     organization_id: Annotated[UUID, Depends(get_organization_id_header)],
     __: Annotated[Membership, Depends(require_roles(MembershipRole.OWNER, MembershipRole.ADMIN))],
     status: str | None = Query(None, description="Filter: queued, started, finished, failed"),
     queue: str | None = Query(None, description="Filter by queue name"),
     limit: int = Query(50, ge=1, le=200),
 ) -> dict:
-    """List background jobs for the active organization's admin dashboard."""
+    """List background jobs for the active organization's admin dashboard. Platform admin only."""
     jobs = JobService().list_jobs(
         status=status,
         queue_name=queue,

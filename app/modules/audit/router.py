@@ -13,10 +13,16 @@ from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query
+from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.core.dependencies import get_current_membership, get_current_user, get_organization_id_header
+from app.core.dependencies import (
+    get_current_membership,
+    get_current_user,
+    get_organization_id_header,
+    require_feature,
+)
 from app.modules.audit.events import AuditAction
 from app.modules.audit.schemas import AuditLogListResponse, AuditLogResponse, AuditLogSearchResponse
 from app.modules.audit.service import AuditLogService
@@ -58,6 +64,37 @@ async def list_audit_logs(
         total=total,
         page=page,
         page_size=page_size,
+    )
+
+
+@router.get("/export")
+async def export_audit_logs(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
+    organization_id: Annotated[UUID, Depends(get_organization_id_header)],
+    _: Annotated[Membership, Depends(get_current_membership)],
+    __: Annotated[None, Depends(require_feature("audit_export"))],
+    action: AuditAction | None = Query(None, description="Filter by action type"),
+    actor_user_id: UUID | None = Query(None, description="Filter by actor user ID"),
+    resource_type: str | None = Query(None, description="Filter by resource type"),
+    start_date: datetime | None = Query(None, description="Filter events on or after this UTC datetime"),
+    end_date: datetime | None = Query(None, description="Filter events on or before this UTC datetime"),
+) -> StreamingResponse:
+    """G8: Export organization audit logs as streaming CSV. Requires audit_export plan feature."""
+    service = AuditLogService(db)
+    csv_stream = await service.export_events_csv(
+        current_user.id,
+        organization_id,
+        action=action,
+        actor_user_id=actor_user_id,
+        resource_type=resource_type,
+        start_date=start_date,
+        end_date=end_date,
+    )
+    return StreamingResponse(
+        csv_stream,
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="audit_logs_{organization_id}.csv"'},
     )
 
 

@@ -127,7 +127,7 @@ async def _process_file_upload(file_id: str, organization_id: str) -> dict:
 
 
 def process_file_upload_task(file_id: str, organization_id: str) -> dict:
-    """Collect file metadata after upload (placeholder for future processing)."""
+    """Post-upload processing hook for background metadata extraction, indexing, or verification."""
     logger.info("Job started: process_file_upload file_id=%s", file_id)
     try:
         result = run_async(_process_file_upload(file_id, organization_id))
@@ -135,38 +135,6 @@ def process_file_upload_task(file_id: str, organization_id: str) -> dict:
         return result
     except Exception as exc:
         logger.exception("Job failed: process_file_upload: %s", exc)
-        raise
-
-
-def process_invitation_task(
-    invitation_id: str,
-    organization_id: str,
-    email: str,
-    inviter_id: str,
-) -> dict:
-    """
-    Process invitation event (placeholder for future email delivery).
-
-    The invitation record is already persisted; this task handles async follow-up.
-    """
-    logger.info(
-        "Job started: process_invitation invitation_id=%s email=%s org=%s",
-        invitation_id,
-        email,
-        organization_id,
-    )
-    try:
-        result = {
-            "invitation_id": invitation_id,
-            "organization_id": organization_id,
-            "email": email,
-            "inviter_id": inviter_id,
-            "status": "processed",
-        }
-        logger.info("Job completed: process_invitation invitation_id=%s", invitation_id)
-        return result
-    except Exception as exc:
-        logger.exception("Job failed: process_invitation: %s", exc)
         raise
 
 

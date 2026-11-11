@@ -13,17 +13,20 @@ Central place for tenant access rules. Other modules call:
 
 from uuid import UUID
 
+from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.cache import CacheKeyBuilder, CacheService
+from app.core.config import get_settings
 from app.core.exceptions import BadRequestError, ConflictError, ForbiddenError, NotFoundError
+from app.jobs.tasks import delete_member_task, index_member_task
 from app.modules.audit.events import RESOURCE_MEMBERSHIP, AuditAction
 from app.modules.audit.service import AuditLogService
+from app.modules.billing.plans import get_plan_limits
 from app.modules.memberships.models import Membership, MembershipRole
 from app.modules.memberships.repository import MembershipRepository
-from app.core.config import get_settings
+from app.modules.organizations.repository import OrganizationRepository
 from app.services.job_service import JobService
-from app.jobs.tasks import index_member_task, delete_member_task
 
 settings = get_settings()
 
@@ -64,10 +67,29 @@ class MembershipService:
         organization_id: UUID,
         role: MembershipRole,
     ) -> Membership:
-        """409 if already a member."""
+        """409 if already a member. Enforces plan max_members for non-owner joins."""
         existing = await self.repo.get_by_user_and_org(user_id, organization_id)
         if existing is not None:
             raise ConflictError("User is already a member of this organization")
+
+        # Plan member limit check (only for non-initial creation)
+        if role != MembershipRole.OWNER:
+            org = await OrganizationRepository(self.db).get_by_id(organization_id)
+            if org:
+                limits = get_plan_limits(org.plan)
+                current_count = await self.repo.count_by_organization(organization_id)
+                if current_count >= limits.max_members:
+                    raise HTTPException(
+                        status_code=402,
+                        detail={
+                            "code": "PLAN_LIMIT_REACHED",
+                            "limit": "max_members",
+                            "current": current_count,
+                            "max": limits.max_members,
+                            "plan": org.plan or "free",
+                        },
+                    )
+
         membership = await self.repo.create(user_id, organization_id, role)
         await self.db.commit()
         # Enqueue background search indexing

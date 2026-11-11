@@ -119,3 +119,16 @@ class AuditLogRepository:
         )
         result = await self.db.execute(items_stmt)
         return list(result.scalars().all()), total
+
+    async def list_for_export(
+        self, organization_id: UUID, filters: AuditFilters, limit: int = 5000
+    ) -> list[AuditLog]:
+        stmt = (
+            select(AuditLog)
+            .where(AuditLog.organization_id == organization_id)
+            .order_by(AuditLog.created_at.desc())
+            .limit(limit)
+        )
+        stmt = self._apply_filters(stmt, filters)
+        result = await self.db.execute(stmt)
+        return list(result.scalars().all())

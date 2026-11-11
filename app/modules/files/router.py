@@ -20,6 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.dependencies import get_current_membership, get_current_user, get_organization_id_header
+from app.core.rate_limit import rate_limit
 from app.modules.auth.models import User
 from app.modules.files.schemas import DeleteResponse, FileDetailResponse, FileResponse, FileStatisticsResponse
 from app.modules.files.service import FileService
@@ -28,7 +29,12 @@ from app.modules.memberships.models import Membership
 router = APIRouter(prefix="/files", tags=["files"])
 
 
-@router.post("/upload", response_model=FileResponse, status_code=201)
+@router.post(
+    "/upload",
+    response_model=FileResponse,
+    status_code=201,
+    dependencies=[Depends(rate_limit("file_upload", 60, 60, key="org"))],
+)
 async def upload_file(
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: Annotated[User, Depends(get_current_user)],

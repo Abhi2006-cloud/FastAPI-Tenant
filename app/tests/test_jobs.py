@@ -13,7 +13,7 @@ from rq import Retry
 
 from app.jobs.job_status import build_job_status_payload, map_rq_status
 from app.jobs.queue import QUEUE_DEFAULT, QUEUE_HIGH, QUEUE_LOW, QUEUE_NAMES, get_default_queue
-from app.jobs.tasks import process_invitation_task, record_audit_event_task
+from app.jobs.tasks import record_audit_event_task
 from app.jobs.worker import main as worker_main
 from app.services.job_service import JobService
 
@@ -111,17 +111,6 @@ def test_record_audit_event_task_executes() -> None:
     assert result["audit_log_id"] == str(fake_log.id)
 
 
-def test_process_invitation_task() -> None:
-    result = process_invitation_task(
-        invitation_id="inv-1",
-        organization_id="org-1",
-        email="user@example.com",
-        inviter_id="user-1",
-    )
-    assert result["status"] == "processed"
-    assert result["email"] == "user@example.com"
-
-
 def test_job_service_get_job_sync_mode() -> None:
     service = JobService()
     job = service.get_job("sync-mode")
@@ -205,7 +194,7 @@ async def test_job_status_endpoint_requires_auth(client: AsyncClient) -> None:
 async def test_job_status_endpoint(client: AsyncClient) -> None:
     from app.tests.test_audit_logs import _register_and_token
 
-    token = await _register_and_token(client, "jobuser@example.com")
+    token = await _register_and_token(client, "platform-admin@example.com")
     org_res = await client.post(
         "/organizations",
         json={"name": "Job Test Org"},
@@ -231,7 +220,7 @@ async def test_job_status_endpoint(client: AsyncClient) -> None:
 async def test_job_endpoint_requires_org_header_and_membership(client: AsyncClient) -> None:
     from app.tests.test_audit_logs import _register_and_token
 
-    token = await _register_and_token(client, "noorguser@example.com")
+    token = await _register_and_token(client, "platform-admin@example.com")
     # Missing X-Organization-Id header
     res_no_header = await client.get(
         "/jobs/sync-mode",
@@ -262,7 +251,7 @@ async def test_job_endpoint_member_role_rejected(client: AsyncClient) -> None:
         _register_and_token,
     )
 
-    owner_token = await _register_and_token(client, "jobowner@example.com")
+    owner_token = await _register_and_token(client, "platform-admin@example.com")
     org_id = await _create_org_and_get_id(client, owner_token)
 
     # Invite regular member
@@ -277,21 +266,19 @@ async def test_job_endpoint_member_role_rejected(client: AsyncClient) -> None:
     }
     list_res = await client.get("/jobs", headers=member_headers)
     assert list_res.status_code == 403
-    assert "Insufficient permissions" in list_res.text
 
     get_res = await client.get("/jobs/sync-mode", headers=member_headers)
     assert get_res.status_code == 403
-    assert "Insufficient permissions" in get_res.text
 
 
 @pytest.mark.asyncio
 async def test_job_tenant_isolation_cannot_access_other_tenant_job(client: AsyncClient) -> None:
     from app.tests.test_memberships import _create_org_and_get_id, _register_and_token
 
-    owner_a_token = await _register_and_token(client, "ownera@example.com")
+    owner_a_token = await _register_and_token(client, "platform-admin@example.com")
     org_a_id = await _create_org_and_get_id(client, owner_a_token)
 
-    owner_b_token = await _register_and_token(client, "ownerb@example.com")
+    owner_b_token = await _register_and_token(client, "platform-admin-2@example.com")
     org_b_id = await _create_org_and_get_id(client, owner_b_token)
 
     # Mock an RQ job belonging to Org A

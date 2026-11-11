@@ -271,82 +271,85 @@ async def test_delete_own_file_as_member(client: AsyncClient) -> None:
     assert delete_response.status_code == 200
 
 
+from unittest.mock import patch
+
 @pytest.mark.asyncio
 async def test_delete_other_user_file_forbidden_as_member(client: AsyncClient) -> None:
-    owner_headers = await _auth_headers(client, "owner@example.com")
-    org = (
+    with patch("app.services.job_service.JobService.enqueue", return_value="mock-job-id"):
+        owner_headers = await _auth_headers(client, "owner@example.com")
+        org = (
+            await client.post(
+                "/organizations",
+                json={"name": "RBAC Org"},
+                headers=owner_headers,
+            )
+        ).json()
+
+        owner_tenant_headers = {
+            **owner_headers,
+            "X-Organization-Id": org["id"],
+        }
+
+        # Owner uploads a file
+        upload_response = await client.post(
+            "/files/upload",
+            headers=owner_tenant_headers,
+            files={"file": ("owner_file.txt", io.BytesIO(b"owner content"), "text/plain")},
+        )
+        assert upload_response.status_code == 201
+        file_id = upload_response.json()["id"]
+
+        # Member tries to delete owner's file
+        # Real invitation flow so member is a verified tenant member with role MEMBER
+        member_email = f"member_{uuid.uuid4().hex[:6]}@example.com"
         await client.post(
-            "/organizations",
-            json={"name": "RBAC Org"},
+            "/auth/register",
+            json={"email": member_email, "password": "securepass123"},
+        )
+        login_res = await client.post(
+            "/auth/login",
+            json={"email": member_email, "password": "securepass123"},
+        )
+        member_token = login_res.json()["access_token"]
+        member_headers = {"Authorization": f"Bearer {member_token}"}
+
+        invite_res = await client.post(
+            f"/organizations/{org['id']}/invite",
+            json={"email": member_email},
             headers=owner_headers,
         )
-    ).json()
+        assert invite_res.status_code == 201
+        invite_token = invite_res.json()["token"]
 
-    owner_tenant_headers = {
-        **owner_headers,
-        "X-Organization-Id": org["id"],
-    }
+        accept_res = await client.post(
+            "/invitations/accept",
+            json={"token": invite_token},
+            headers=member_headers,
+        )
+        assert accept_res.status_code == 200
 
-    # Owner uploads a file
-    upload_response = await client.post(
-        "/files/upload",
-        headers=owner_tenant_headers,
-        files={"file": ("owner_file.txt", io.BytesIO(b"owner content"), "text/plain")},
-    )
-    assert upload_response.status_code == 201
-    file_id = upload_response.json()["id"]
+        member_tenant_headers = {
+            **member_headers,
+            "X-Organization-Id": org["id"],
+        }
 
-    # Member tries to delete owner's file
-    # Real invitation flow so member is a verified tenant member with role MEMBER
-    member_email = f"member_{uuid.uuid4().hex[:6]}@example.com"
-    await client.post(
-        "/auth/register",
-        json={"email": member_email, "password": "securepass123"},
-    )
-    login_res = await client.post(
-        "/auth/login",
-        json={"email": member_email, "password": "securepass123"},
-    )
-    member_token = login_res.json()["access_token"]
-    member_headers = {"Authorization": f"Bearer {member_token}"}
+        # Member attempts to delete owner's file -> 403 Forbidden specifically due to RBAC
+        delete_response = await client.delete(f"/files/{file_id}", headers=member_tenant_headers)
+        assert delete_response.status_code == 403
+        assert "You can only delete files you uploaded" in delete_response.text
 
-    invite_res = await client.post(
-        f"/organizations/{org['id']}/invite",
-        json={"email": member_email},
-        headers=owner_headers,
-    )
-    assert invite_res.status_code == 201
-    invite_token = invite_res.json()["token"]
+        # Member uploads their own file -> 201
+        member_upload = await client.post(
+            "/files/upload",
+            headers=member_tenant_headers,
+            files={"file": ("member_doc.txt", io.BytesIO(b"my own file"), "text/plain")},
+        )
+        assert member_upload.status_code == 201
+        member_file_id = member_upload.json()["id"]
 
-    accept_res = await client.post(
-        "/invitations/accept",
-        json={"token": invite_token},
-        headers=member_headers,
-    )
-    assert accept_res.status_code == 200
-
-    member_tenant_headers = {
-        **member_headers,
-        "X-Organization-Id": org["id"],
-    }
-
-    # Member attempts to delete owner's file -> 403 Forbidden specifically due to RBAC
-    delete_response = await client.delete(f"/files/{file_id}", headers=member_tenant_headers)
-    assert delete_response.status_code == 403
-    assert "You can only delete files you uploaded" in delete_response.text
-
-    # Member uploads their own file -> 201
-    member_upload = await client.post(
-        "/files/upload",
-        headers=member_tenant_headers,
-        files={"file": ("member_doc.txt", io.BytesIO(b"my own file"), "text/plain")},
-    )
-    assert member_upload.status_code == 201
-    member_file_id = member_upload.json()["id"]
-
-    # Member can delete their own file -> 200
-    member_delete = await client.delete(f"/files/{member_file_id}", headers=member_tenant_headers)
-    assert member_delete.status_code == 200
+        # Member can delete their own file -> 200
+        member_delete = await client.delete(f"/files/{member_file_id}", headers=member_tenant_headers)
+        assert member_delete.status_code == 200
 
 
 @pytest.mark.asyncio

@@ -22,19 +22,28 @@ from app.modules.invitations.schemas import (
 from app.modules.invitations.service import InvitationService
 
 from app.core.config import get_settings
+from app.modules.invitations.models import InvitationStatus
+from app.modules.organizations.repository import OrganizationRepository
 
 router = APIRouter(tags=["invitations"])
 
 
-def _format_invitation_response(invitation) -> InvitationResponse:
+def _format_invitation_response(invitation, plan: str = "free") -> InvitationResponse:
     settings = get_settings()
     res = InvitationResponse.model_validate(invitation)
     mode = settings.effective_email_mode
-
-    res.delivery_mode = mode
     join_url = f"{settings.frontend_url}/invitations?token={invitation.token}"
     res.invitation_url = join_url
 
+    # Free plan invitations: delivery is manual, raw token and invitation_url always returned
+    if plan == "free":
+        res.delivery_mode = "manual"
+        res.delivery_status = "manual_sharing_required"
+        res.token = invitation.token
+        res.message = "Free plan: please copy and share the invitation link manually."
+        return res
+
+    res.delivery_mode = mode
     if mode == "production":
         res.delivery_status = "email_sent"
         res.message = "Invitation queued for delivery via email."
@@ -73,7 +82,45 @@ async def invite_user(
         organization_id=org_id,
         data=data,
     )
-    return _format_invitation_response(invitation)
+    org = await OrganizationRepository(db).get_by_id(org_id)
+    plan_val = org.plan if org else "free"
+    return _format_invitation_response(invitation, plan=plan_val)
+
+
+@router.get("/organizations/{org_id}/invitations", response_model=list[InvitationResponse])
+async def list_organization_invitations(
+    org_id: UUID,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
+    status: InvitationStatus | None = None,
+) -> list[InvitationResponse]:
+    """G3: List invitations (pending/accepted/revoked) for an organization. Owner/admin only."""
+    invitations = await InvitationService(db).list_invitations(
+        organization_id=org_id,
+        actor_id=current_user.id,
+        status=status,
+    )
+    org = await OrganizationRepository(db).get_by_id(org_id)
+    plan_val = org.plan if org else "free"
+    return [_format_invitation_response(inv, plan=plan_val) for inv in invitations]
+
+
+@router.delete("/organizations/{org_id}/invitations/{invitation_id}", response_model=InvitationResponse)
+async def revoke_organization_invitation(
+    org_id: UUID,
+    invitation_id: UUID,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> InvitationResponse:
+    """G4: Revoke a pending invitation. Owner/admin only."""
+    invitation = await InvitationService(db).revoke_invitation(
+        organization_id=org_id,
+        invitation_id=invitation_id,
+        actor_id=current_user.id,
+    )
+    org = await OrganizationRepository(db).get_by_id(org_id)
+    plan_val = org.plan if org else "free"
+    return _format_invitation_response(invitation, plan=plan_val)
 
 
 @router.post("/invitations/accept", response_model=InvitationResponse)
@@ -87,7 +134,9 @@ async def accept_invitation(
         user_email=current_user.email,
         data=data,
     )
-    return _format_invitation_response(invitation)
+    org = await OrganizationRepository(db).get_by_id(invitation.organization_id)
+    plan_val = org.plan if org else "free"
+    return _format_invitation_response(invitation, plan=plan_val)
 
 
 @router.post("/invitations/{invitation_id}/resend", response_model=InvitationResponse)
@@ -101,6 +150,8 @@ async def resend_invitation(
         invitation_id=invitation_id,
         actor_id=current_user.id,
     )
-    return _format_invitation_response(invitation)
+    org = await OrganizationRepository(db).get_by_id(invitation.organization_id)
+    plan_val = org.plan if org else "free"
+    return _format_invitation_response(invitation, plan=plan_val)
 
 

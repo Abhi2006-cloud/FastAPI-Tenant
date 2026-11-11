@@ -8,7 +8,7 @@ Disk layout: uploads/<org_id>/<uuid>_<filename>
 from pathlib import Path
 from uuid import UUID
 
-from fastapi import UploadFile
+from fastapi import HTTPException, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
@@ -16,11 +16,13 @@ from app.core.exceptions import BadRequestError, ForbiddenError, NotFoundError
 from app.jobs.tasks import process_file_upload_task, index_file_task, delete_file_task
 from app.modules.audit.events import RESOURCE_FILE, AuditAction
 from app.modules.audit.service import AuditLogService
+from app.modules.billing.plans import get_plan_limits
 from app.modules.files.models import FileRecord
 from app.modules.files.repository import FileRepository
 from app.modules.files.storage import StorageService
 from app.modules.memberships.models import MembershipRole
 from app.modules.memberships.service import MembershipService
+from app.modules.organizations.repository import OrganizationRepository
 from app.services.job_service import JobService
 from app.utils.files import build_storage_path, validate_upload
 
@@ -43,11 +45,32 @@ class FileService:
     ) -> FileRecord:
         await self.membership_service.ensure_member(user_id, organization_id)
 
+        # ── Plan limits enforcement: max_files & org_storage_mb ──────────────
+        org = await OrganizationRepository(self.db).get_by_id(organization_id)
+        plan_str = org.plan if org else "free"
+        limits = get_plan_limits(plan_str)
+
+        stats = await self.repo.get_statistics(organization_id)
+        current_files = stats["total_files"]
+        current_storage_bytes = stats["total_size_bytes"]
+
+        if current_files >= limits.max_files:
+            raise HTTPException(
+                status_code=402,
+                detail={
+                    "code": "PLAN_LIMIT_REACHED",
+                    "limit": "max_files",
+                    "current": current_files,
+                    "max": limits.max_files,
+                    "plan": plan_str,
+                },
+            )
+
         safe_name = validate_upload(upload)
-        current_settings = get_settings()
         chunk_size = 64 * 1024
         total_size = 0
-        max_bytes = current_settings.max_upload_size_bytes
+        current_settings = get_settings()
+        max_bytes = limits.max_upload_bytes
 
         if self.storage.backend == "postgres":
             chunks: list[bytes] = []
@@ -56,14 +79,35 @@ class FileService:
                 if not chunk:
                     break
                 total_size += len(chunk)
+                if current_settings.max_upload_size_bytes < limits.max_upload_bytes and total_size > current_settings.max_upload_size_bytes:
+                    raise BadRequestError(f"File exceeds maximum size of {current_settings.max_upload_size_mb} MB")
                 if total_size > max_bytes:
-                    raise BadRequestError(
-                        f"File exceeds maximum size of {current_settings.max_upload_size_mb} MB"
+                    raise HTTPException(
+                        status_code=402,
+                        detail={
+                            "code": "PLAN_LIMIT_REACHED",
+                            "limit": "max_upload_mb",
+                            "current": round(total_size / (1024 * 1024), 2),
+                            "max": limits.max_upload_mb,
+                            "plan": plan_str,
+                        },
                     )
                 chunks.append(chunk)
 
             if total_size == 0:
                 raise BadRequestError("Empty file")
+
+            if current_storage_bytes + total_size > limits.org_storage_bytes:
+                raise HTTPException(
+                    status_code=402,
+                    detail={
+                        "code": "PLAN_LIMIT_REACHED",
+                        "limit": "org_storage_mb",
+                        "current": round((current_storage_bytes + total_size) / (1024 * 1024), 2),
+                        "max": limits.org_storage_mb,
+                        "plan": plan_str,
+                    },
+                )
 
             import uuid
             file_id = uuid.uuid4()
@@ -93,9 +137,20 @@ class FileService:
                         if not chunk:
                             break
                         total_size += len(chunk)
+                        if current_settings.max_upload_size_bytes < limits.max_upload_bytes and total_size > current_settings.max_upload_size_bytes:
+                            if safe_storage_path.exists():
+                                safe_storage_path.unlink()
+                            raise BadRequestError(f"File exceeds maximum size of {current_settings.max_upload_size_mb} MB")
                         if total_size > max_bytes:
-                            raise BadRequestError(
-                                f"File exceeds maximum size of {current_settings.max_upload_size_mb} MB"
+                            raise HTTPException(
+                                status_code=402,
+                                detail={
+                                    "code": "PLAN_LIMIT_REACHED",
+                                    "limit": "max_upload_mb",
+                                    "current": round(total_size / (1024 * 1024), 2),
+                                    "max": limits.max_upload_mb,
+                                    "plan": plan_str,
+                                },
                             )
                         f.write(chunk)
 
@@ -103,6 +158,20 @@ class FileService:
                     if safe_storage_path.exists():
                         safe_storage_path.unlink()
                     raise BadRequestError("Empty file")
+
+                if current_storage_bytes + total_size > limits.org_storage_bytes:
+                    if safe_storage_path.exists():
+                        safe_storage_path.unlink()
+                    raise HTTPException(
+                        status_code=402,
+                        detail={
+                            "code": "PLAN_LIMIT_REACHED",
+                            "limit": "org_storage_mb",
+                            "current": round((current_storage_bytes + total_size) / (1024 * 1024), 2),
+                            "max": limits.org_storage_mb,
+                            "plan": plan_str,
+                        },
+                    )
 
                 # Mirror to S3 if enabled
                 if self.storage._s3_client and self.storage.settings.s3_bucket_name:

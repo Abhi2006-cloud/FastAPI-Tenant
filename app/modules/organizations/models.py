@@ -28,6 +28,10 @@ class Organization(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
+    plan: Mapped[str] = mapped_column(String(32), default="free", nullable=False)
+    plan_updated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
     owner: Mapped["User"] = relationship(  # noqa: F821
         back_populates="owned_organizations",
@@ -42,6 +46,10 @@ class Organization(Base):
         cascade="all, delete-orphan",
     )
     files: Mapped[list["FileRecord"]] = relationship(  # noqa: F821
+        back_populates="organization",
+        cascade="all, delete-orphan",
+    )
+    upgrade_requests: Mapped[list["UpgradeRequest"]] = relationship(  # noqa: F821
         back_populates="organization",
         cascade="all, delete-orphan",
     )

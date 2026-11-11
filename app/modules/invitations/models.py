@@ -19,6 +19,7 @@ from app.core.database import Base
 class InvitationStatus(str, enum.Enum):
     PENDING = "pending"
     ACCEPTED = "accepted"
+    REVOKED = "revoked"
 
 
 class Invitation(Base):

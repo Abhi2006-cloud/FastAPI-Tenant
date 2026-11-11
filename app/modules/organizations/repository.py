@@ -43,6 +43,15 @@ class OrganizationRepository:
         await self.db.refresh(organization)
         return organization
 
+    async def delete(self, organization: Organization) -> None:
+        await self.db.delete(organization)
+        await self.db.flush()
+
+    async def save(self, organization: Organization) -> Organization:
+        await self.db.flush()
+        await self.db.refresh(organization)
+        return organization
+
     async def list_for_user(self, user_id: UUID) -> list[Organization]:
         """All tenants (workspaces) this user is a member of."""
         result = await self.db.execute(

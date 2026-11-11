@@ -16,6 +16,7 @@ from app.core.dependencies import (
     get_current_membership,
     get_current_user,
     get_organization_id_header,
+    require_platform_admin,
     require_roles,
 )
 from app.infrastructure.email.client import get_email_provider
@@ -54,7 +55,7 @@ def _sanitize_email_log(log: EmailLog) -> EmailLog:
 async def send_test_email(
     data: SendTestEmailRequest,
     db: Annotated[AsyncSession, Depends(get_db)],
-    current_user: Annotated[User, Depends(get_current_user)],
+    current_user: Annotated[User, Depends(require_platform_admin)],
     organization_id: Annotated[UUID, Depends(get_organization_id_header)],
     _: Annotated[Membership, Depends(require_roles(MembershipRole.OWNER, MembershipRole.ADMIN))],
 ) -> EmailLogResponse:
