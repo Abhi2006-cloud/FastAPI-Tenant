@@ -21,8 +21,11 @@ from app.modules.memberships.service import MembershipService
 from app.modules.organizations.models import Organization
 from app.modules.organizations.repository import OrganizationRepository
 from app.modules.organizations.schemas import OrganizationCreate, OrganizationResponse
+from app.core.config import get_settings
 from app.services.job_service import JobService
 from app.jobs.tasks import index_organization_task, index_member_task
+
+settings = get_settings()
 
 
 class OrganizationService:
@@ -53,8 +56,9 @@ class OrganizationService:
         await self.db.commit()
         
         # Enqueue search indexing tasks for the organization and owner membership
-        self.job_service.enqueue(index_organization_task, str(organization.id))
-        self.job_service.enqueue(index_member_task, str(owner_membership.id))
+        if settings.is_search_enabled:
+            self.job_service.enqueue(index_organization_task, str(organization.id))
+            self.job_service.enqueue(index_member_task, str(owner_membership.id))
 
         # Invalidate user's organization list cache
         cache_key = CacheKeyBuilder.user(str(owner_id))
@@ -87,7 +91,8 @@ class OrganizationService:
         )
         
         # Enqueue search indexing task for organization update
-        self.job_service.enqueue(index_organization_task, str(organization_id))
+        if settings.is_search_enabled:
+            self.job_service.enqueue(index_organization_task, str(organization_id))
         
         # Invalidate caches
         user_cache_key = CacheKeyBuilder.user(str(requester_user_id))

@@ -21,6 +21,7 @@ from collections.abc import AsyncIterator
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+import app.models  # noqa: F401
 from app.core.config import get_settings
 from app.core.redis import RedisClient
 from app.middleware.tenant import TenantContextMiddleware
@@ -40,7 +41,10 @@ settings = get_settings()
 
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
-    """Startup/shutdown hooks for Redis and other resources."""
+    """Startup/shutdown hooks for Redis, workers, search, and other resources."""
+    # Startup: Validate production configuration (fail fast)
+    settings.validate_production_settings()
+
     # Startup: Connect to Redis
     try:
         await RedisClient.get_client()
@@ -48,29 +52,42 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
         import logging
         logging.getLogger(__name__).warning("Failed to connect to Redis during startup: %s. Continuing...", str(e))
 
-    
-    # Startup: Connect and initialize Meilisearch
-    from app.infrastructure.search.client import search_client
-    from app.infrastructure.search.index_manager import IndexManager
-    try:
-        connected = await search_client.initialize()
-        if connected:
-            await IndexManager.initialize_indexes()
-    except Exception as e:
-        import logging
-        logging.getLogger(__name__).warning("Failed to initialize Meilisearch on startup: %s. Continuing...", str(e))
+    # Startup: Embedded RQ Worker (if enabled and not sync mode)
+    if settings.embedded_worker and not settings.job_sync_mode:
+        from app.jobs.embedded_worker import EmbeddedWorkerManager
+        EmbeddedWorkerManager.start()
+
+    # Startup: Connect and initialize Meilisearch (only if enabled)
+    if settings.is_search_enabled:
+        from app.infrastructure.search.client import search_client
+        from app.infrastructure.search.index_manager import IndexManager
+        try:
+            connected = await search_client.initialize()
+            if connected:
+                await IndexManager.initialize_indexes()
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).warning("Failed to initialize Meilisearch on startup: %s. Continuing...", str(e))
 
     yield
+
+    # Shutdown: Stop embedded worker
+    try:
+        from app.jobs.embedded_worker import EmbeddedWorkerManager
+        EmbeddedWorkerManager.stop()
+    except Exception:
+        pass
     
     # Shutdown: Close Redis connection
     await RedisClient.close()
     
     # Shutdown: Close Meilisearch connection
-    try:
-        from app.infrastructure.search.client import search_client
-        await search_client.close()
-    except Exception:
-        pass
+    if settings.is_search_enabled:
+        try:
+            from app.infrastructure.search.client import search_client
+            await search_client.close()
+        except Exception:
+            pass
 
 
 app = FastAPI(
@@ -106,12 +123,19 @@ app.include_router(email_router)
 
 
 
+@app.get("/health/live")
+async def health_live() -> dict[str, str]:
+    """Instant liveness check with zero DB or Redis calls for pingers/monitors."""
+    return {"status": "ok"}
+
+
 @app.get("/health")
 async def health() -> dict:
     """Liveness check with database, Redis, worker, search, email, and queue status."""
     from app.services.job_service import JobService
     from app.infrastructure.search.health import check_search_health
     from app.infrastructure.email.health import check_email_health
+    from app.jobs.embedded_worker import EmbeddedWorkerManager
 
     redis_status = "connected" if await RedisClient.health_check() else "disconnected"
     
@@ -157,10 +181,31 @@ async def health() -> dict:
     except Exception:
         session_store_status = "degraded"
 
+    if settings.job_sync_mode:
+        worker_info = {
+            "mode": "sync",
+            "alive": True,
+            "details": "Sync mode active (jobs run inline)",
+        }
+    elif settings.embedded_worker:
+        worker_info = {
+            "mode": "embedded",
+            "alive": EmbeddedWorkerManager.is_alive(),
+            "status": "running" if EmbeddedWorkerManager.is_alive() else "stopped",
+            "queues": settings.embedded_worker_queue_list,
+        }
+    else:
+        worker_info = {
+            "mode": "external",
+            "alive": worker_stats["count"] > 0,
+            "status": worker_stats["status"],
+            "count": worker_stats["count"],
+        }
+
     is_ok = (
         db_status == "connected" 
         and redis_status == "connected" 
-        and search_status in ("connected", "ok")
+        and search_status in ("connected", "ok", "disabled")
         and email_status in ("connected", "console", "development")
     )
     status_str = "ok" if is_ok else "degraded"
@@ -175,7 +220,7 @@ async def health() -> dict:
         "session_store": session_store_status,
         "email": email_status,
         "email_detail": email_health,
-        "worker": worker_stats["status"],
+        "worker": worker_info,
         "workers": worker_stats,
         "queues": queue_stats,
     }

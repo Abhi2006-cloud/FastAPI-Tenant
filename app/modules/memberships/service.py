@@ -21,8 +21,11 @@ from app.modules.audit.events import RESOURCE_MEMBERSHIP, AuditAction
 from app.modules.audit.service import AuditLogService
 from app.modules.memberships.models import Membership, MembershipRole
 from app.modules.memberships.repository import MembershipRepository
+from app.core.config import get_settings
 from app.services.job_service import JobService
 from app.jobs.tasks import index_member_task, delete_member_task
+
+settings = get_settings()
 
 
 
@@ -68,7 +71,8 @@ class MembershipService:
         membership = await self.repo.create(user_id, organization_id, role)
         await self.db.commit()
         # Enqueue background search indexing
-        self.job_service.enqueue(index_member_task, str(membership.id))
+        if settings.is_search_enabled:
+            self.job_service.enqueue(index_member_task, str(membership.id))
         # Invalidate user's organization list cache (invitation accepted)
         cache_key = CacheKeyBuilder.user(str(user_id))
         await self.cache.delete(cache_key)
@@ -166,7 +170,8 @@ class MembershipService:
             },
         )
         # Enqueue background search indexing for role change
-        self.job_service.enqueue(index_member_task, str(membership_id))
+        if settings.is_search_enabled:
+            self.job_service.enqueue(index_member_task, str(membership_id))
         # Invalidate target user's organization list cache
         cache_key = CacheKeyBuilder.user(str(target_membership.user_id))
         await self.cache.delete(cache_key)
@@ -221,7 +226,8 @@ class MembershipService:
         # Delete membership
         await self.repo.delete(membership_id)
         # Enqueue background search deletion
-        self.job_service.enqueue(delete_member_task, str(membership_id), str(organization_id))
+        if settings.is_search_enabled:
+            self.job_service.enqueue(delete_member_task, str(membership_id), str(organization_id))
         await AuditLogService(self.db).create_event(
             organization_id=organization_id,
             actor_user_id=requester_user_id,
@@ -303,10 +309,11 @@ class MembershipService:
         await OrganizationRepository(self.db).update_owner(organization_id, target_membership.user_id)
 
         # Enqueue background search indexing updates for both memberships and the organization
-        self.job_service.enqueue(index_member_task, str(current_owner_membership.id))
-        self.job_service.enqueue(index_member_task, str(target_membership.id))
-        from app.jobs.tasks import index_organization_task
-        self.job_service.enqueue(index_organization_task, str(organization_id))
+        if settings.is_search_enabled:
+            self.job_service.enqueue(index_member_task, str(current_owner_membership.id))
+            self.job_service.enqueue(index_member_task, str(target_membership.id))
+            from app.jobs.tasks import index_organization_task
+            self.job_service.enqueue(index_organization_task, str(organization_id))
 
         await AuditLogService(self.db).create_event(
             organization_id=organization_id,

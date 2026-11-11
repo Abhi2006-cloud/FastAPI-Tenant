@@ -56,9 +56,10 @@ class AuditLogService:
                 resource_id=resource_id,
                 metadata=metadata,
             )
-            # Enqueue search indexing immediately
-            from app.jobs.search_tasks import index_audit_log_task
-            self.job_service.enqueue(index_audit_log_task, str(log.id))
+            # Enqueue search indexing immediately if search enabled
+            if get_settings().is_search_enabled:
+                from app.jobs.search_tasks import index_audit_log_task
+                self.job_service.enqueue(index_audit_log_task, str(log.id))
             return "sync-mode"
 
 
