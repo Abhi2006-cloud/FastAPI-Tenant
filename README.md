@@ -1,6 +1,15 @@
 # Multi-Tenant AI Workspace SaaS (FastAPI Backend)
 
-A production-ready, highly scalable multi-tenant SaaS application built with **FastAPI**, **PostgreSQL**, **Redis**, **RQ Workers**, **Meilisearch**, and **Streamlit**.
+A production-ready, highly scalable multi-tenant SaaS application built with **FastAPI**, **PostgreSQL**, **Redis**, **RQ Workers**, and **React 19**.
+
+---
+
+## 🌟 Core Architecture Summary
+- **Multi-Tenant Isolation**: Tenant scoping is enforced strictly at the database query layer via `organization_id`, guarded at the API gateway by `TenantContextMiddleware`, `get_organization_id_header`, and `get_current_membership` RBAC dependencies.
+- **Dynamic Plan Entitlements & Quotas**: Typed single source of truth (`app/modules/billing/plans.py`) driving real-time quota enforcement in domain services (`max_members`, `max_files`, `org_storage_mb`, `invites_per_hour`) returning standard `402 Payment Required` errors (`PLAN_LIMIT_REACHED` and `PLAN_FEATURE_LOCKED`).
+- **Distributed Rate Limiting**: High-performance atomic Redis fixed-window counters (`INCR` + `EXPIRE NX` pipeline) with proxy-aware IP derivation and graceful fail-open resilience, delivering standard `429 Too Many Requests`, `Retry-After`, and `X-RateLimit-*` headers.
+- **Stateful JWT Revocation Denylist**: Stateless JWT access tokens carrying session IDs (`sid`) and token IDs (`jti`), paired with instant Redis denylisting on logout, password change, or remote session termination for zero-delay token revocation.
+- **Zero-Cost Embedded Background Worker**: Single-process architecture featuring a daemonized RQ worker thread running inside the FastAPI web process, processing asynchronous queues (`high`, `default`, `low`, `email`) and handling graceful lifespan shutdown on Render free tier.
 
 ---
 
@@ -178,10 +187,10 @@ cd frontend-react && npm run dev
 
 ## 🧪 Testing Suite
 
-The application includes a 100% passing test suite of 146 unit, integration, and security tests using `pytest` and an in-memory SQLite database.
+The application includes a comprehensive, 100% passing test suite of 214 unit, integration, and security tests using `pytest`, `asyncio`, and an in-memory SQLite database.
 
 ```bash
-# Run all 146 tests
+# Run all 214 tests
 pytest
 
 # Run tests with verbose output
@@ -193,7 +202,51 @@ pytest --cov=app/modules --cov=app/core
 # Run specific module tests
 pytest app/tests/test_protected_routes.py
 pytest app/tests/test_search.py
+pytest app/tests/test_plans.py
+pytest app/tests/test_rate_limit.py
 ```
+
+---
+
+## 💡 Backend Engineering Interview Talking Points
+
+1. **Plans & Entitlements Architecture**:
+   - Single source of truth typed configuration (`app/modules/billing/plans.py`) that decouples billing tiers from business logic.
+   - Domain services return structured `402 Payment Required` errors (`PLAN_LIMIT_REACHED` vs `PLAN_FEATURE_LOCKED`) with actionable upgrade paths.
+   - The UI never hardcodes limits or features; it dynamically queries `GET /organizations/{id}/entitlements` and adapts capabilities based on the active tier.
+
+2. **Multi-Tenant Quota Enforcement in Services**:
+   - Enforced within domain service boundaries (`router -> service -> repository`), not purely at the API middleware edge.
+   - Enforces member limits, file counts, and storage byte quotas with atomic database rollbacks.
+   - Uses Redis sliding/hourly counters to rate limit team invitations (`invites_per_hour`).
+
+3. **High-Performance Distributed Rate Limiting**:
+   - Atomic fixed-window counters implemented via Redis pipeline (`INCR` + `EXPIRE NX`) eliminating race conditions.
+   - Real client IP resolution securely derives the true client IP from `X-Forwarded-For` using `-settings.trusted_proxy_count`, neutralizing spoofed header injection.
+   - Fail-open resilience: Redis connectivity failures gracefully degrade to allow traffic rather than blocking users, logging warnings for observability.
+
+4. **Access-Token Revocation via Session Denylist**:
+   - Stateless JWT tokens contain session identifiers (`sid`) and token IDs (`jti`).
+   - Logout, password changes, replay attacks, and remote device revocations immediately record the `sid` in Redis with a TTL matching the token lifespan.
+   - The auth dependency checks the Redis denylist in O(1) time without querying PostgreSQL on every authenticated request.
+
+5. **Embedded Background Worker Design**:
+   - Render's free tier allows only a single web service and wipes disk storage upon sleep or redeploy.
+   - Implemented an embedded, daemonized RQ worker thread running within the web process lifespan, saving the cost of a dedicated background worker.
+   - Handles clean SIGTERM/lifespan shutdown, ensuring running jobs complete before container disposal.
+
+6. **Production-Identical Demo Mode**:
+   - The interactive demo (`POST /demo/session`) does not return mocked dummy objects. It provisions an ephemeral tenant workspace through the actual production service layer (`OrganizationService`, `UserService`, `FileService`, `MembershipService`).
+   - Supports an instant `POST /demo/upgrade` toggle to evaluate Free vs. Pro feature gating live in the UI.
+
+---
+
+## ⚠️ Known Limitations (Zero-Cost Production Tier)
+
+- **Render Cold Starts**: Render's free instance spins down into sleep mode after 15 minutes of inactivity. First requests after sleep experience a 30–60s cold start latency. *(Mitigated by setting up a free 10-minute UptimeRobot ping on `/health/live`).*
+- **Database-Backed File Storage**: Files are stored in the PostgreSQL `file_blobs` table with strict quotas (2 MB per file, 50 MB Free / 200 MB Pro). This ensures uploaded files persist across ephemeral Render redeploys and spin-downs without requiring paid S3/R2 storage buckets.
+- **Disabled SaaS Integrations**: Resend transactional email runs in console/manual link sharing mode (avoiding unverified domain restrictions); Meilisearch Cloud runs in degraded mode using an internal SQL ILIKE search endpoint (`GET /search/basic`).
+- **Fail-Open Fault Tolerance**: If Upstash Redis experiences a network partition, the rate limiter and session token revocation fail open to prevent total application downtime, prioritizing availability while logging alerts.
 
 ---
 
