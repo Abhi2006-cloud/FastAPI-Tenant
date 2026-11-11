@@ -94,6 +94,24 @@ class Settings(BaseSettings):
     email_rate_limit_per_hour: int = 20
     expose_invitation_tokens: bool = False
 
+    # Rate limiting & proxy configuration
+    trusted_proxy_count: int = 1
+
+    # Platform Administration
+    platform_admin_emails: str = ""
+
+    # Demo Mode Configuration
+    demo_enabled: bool = True
+    demo_ttl_hours: int = 24
+    demo_max_active: int = 15
+
+    @property
+    def platform_admin_email_list(self) -> list[str]:
+        """Parse comma-separated platform admin emails."""
+        if not self.platform_admin_emails:
+            return []
+        return [e.strip().lower() for e in self.platform_admin_emails.split(",") if e.strip()]
+
     @property
     def is_search_enabled(self) -> bool:
         """True if search is explicitly enabled or configured with a valid URL."""
