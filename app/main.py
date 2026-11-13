@@ -98,11 +98,17 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# Allows separate frontend origins (e.g. production React URL or localhost:3000) to call this API from the browser
+# Allows separate frontend origins (e.g. production React URL, Vercel deployments, or localhost:5173) to call this API from the browser
 cors_origins = settings.allowed_origins_list
+cors_origin_regex = (
+    r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$|"
+    r"^https://.*\.vercel\.app$|"
+    r"^https://.*\.onrender\.com$"
+)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=cors_origins,
+    allow_origin_regex=cors_origin_regex,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

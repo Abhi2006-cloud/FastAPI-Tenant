@@ -52,9 +52,13 @@ export const RegisterPage: React.FC = () => {
       const demoRes = await startDemoSession();
       navigate(`/o/${demoRes.organization_id}/overview`);
     } catch (err: unknown) {
-      const axiosErr = err as { response?: { data?: { detail?: string | { code?: string; retry_after?: number } } } };
+      const axiosErr = err as { response?: { data?: { detail?: string | { code?: string; retry_after?: number } } }; message?: string };
       const d = axiosErr.response?.data?.detail;
-      const msg = typeof d === "string" ? d : (d?.code ? `Rate limit exceeded. Retry in ${d.retry_after}s.` : "Could not provision demo session.");
+      const msg = typeof d === "string"
+        ? d
+        : (d?.code
+          ? `Rate limit exceeded. Retry in ${d.retry_after}s.`
+          : (axiosErr.message ? `Connection error: ${axiosErr.message}` : "Could not provision demo session."));
       setError(msg);
     } finally {
       setDemoLoading(false);
