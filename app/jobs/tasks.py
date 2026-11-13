@@ -61,8 +61,18 @@ async def _persist_audit_event(
             )
             await session.commit()
             return {"audit_log_id": str(audit_log.id)}
-        except Exception:
+        except Exception as exc:
             await session.rollback()
+            # If the organization was already deleted before this background task ran,
+            # ignore foreign key constraint violation gracefully.
+            if "audit_logs_organization_id_fkey" in str(exc) or "ForeignKeyViolationError" in type(exc).__name__:
+                logger.warning(
+                    "Skipping audit event '%s' for deleted organization %s: %s",
+                    action,
+                    organization_id,
+                    exc,
+                )
+                return {"status": "skipped", "reason": "organization_deleted"}
             raise
 
 

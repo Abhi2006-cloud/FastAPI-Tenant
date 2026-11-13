@@ -216,15 +216,16 @@ class OrganizationService:
                 import logging
                 logging.getLogger(__name__).warning("Failed to delete storage file %s: %s", f.file_path, exc)
 
-        # 2. Audit event before row is deleted (so it references org or gets cascade deleted)
-        await AuditLogService(self.db).create_event(
-            organization_id=organization_id,
-            actor_user_id=user_id,
-            action=AuditAction.ORGANIZATION_DELETED,
-            resource_type=RESOURCE_ORGANIZATION,
-            resource_id=organization_id,
-            metadata={"name": org.name},
-        )
+        # 2. Audit event before row is deleted (only persisted if sync; in async mode org is deleted immediately)
+        if settings.job_sync_mode:
+            await AuditLogService(self.db).persist_event(
+                organization_id=organization_id,
+                actor_user_id=user_id,
+                action=AuditAction.ORGANIZATION_DELETED,
+                resource_type=RESOURCE_ORGANIZATION,
+                resource_id=organization_id,
+                metadata={"name": org.name},
+            )
 
         # 3. Search document removal if search enabled
         if settings.is_search_enabled:
