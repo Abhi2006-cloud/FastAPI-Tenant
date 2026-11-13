@@ -37,6 +37,7 @@ RUN groupadd -r appgroup && useradd -r -g appgroup -d /app -s /sbin/nologin appu
 
 # Copy application source code
 COPY app/ ./app/
+COPY templates/ ./templates/
 COPY alembic/ ./alembic/
 COPY alembic.ini .
 COPY VERSION .
