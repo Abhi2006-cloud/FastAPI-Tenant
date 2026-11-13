@@ -23,6 +23,7 @@ import { SecurityPage } from "./pages/account/SecurityPage.tsx";
 import { PlatformPage } from "./pages/platform/PlatformPage.tsx";
 import { SearchDocPage } from "./pages/docs/SearchDocPage.tsx";
 import { EmailDocPage } from "./pages/docs/EmailDocPage.tsx";
+import { AcceptInvitePage } from "./pages/invitations/AcceptInvitePage.tsx";
 import { NotFoundPage } from "./pages/NotFoundPage.tsx";
 
 const queryClient = new QueryClient({
@@ -72,6 +73,22 @@ export const App: React.FC = () => {
                 <Route path="/docs/search" element={<SearchDocPage />} />
                 <Route path="/docs/email" element={<EmailDocPage />} />
                 <Route path="/platform" element={<PlatformPage />} />
+                <Route
+                  path="/invitations"
+                  element={
+                    <OrgProvider>
+                      <AcceptInvitePage />
+                    </OrgProvider>
+                  }
+                />
+                <Route
+                  path="/accept-invite"
+                  element={
+                    <OrgProvider>
+                      <AcceptInvitePage />
+                    </OrgProvider>
+                  }
+                />
 
                 {/* Root Redirect */}
                 <Route path="/" element={<RootRedirect />} />

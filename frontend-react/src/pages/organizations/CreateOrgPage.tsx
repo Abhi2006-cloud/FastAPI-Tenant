@@ -63,21 +63,30 @@ export const CreateOrgPage: React.FC = () => {
             />
           </div>
 
-          <div className="flex items-center justify-end gap-2 pt-2">
+          <div className="flex items-center justify-between pt-2 border-t border-[#E4E4E7]">
             <button
               type="button"
-              onClick={() => navigate(-1)}
-              className="px-3 py-1.5 border border-[#E4E4E7] text-[13px] text-[#52525B] hover:bg-[#FAFAFA] rounded-[6px]"
+              onClick={() => navigate("/invitations")}
+              className="text-[12px] text-[#0F766E] hover:underline"
             >
-              Cancel
+              Have an invitation token?
             </button>
-            <button
-              type="submit"
-              disabled={loading || !name.trim()}
-              className="px-4 py-1.5 bg-[#0F766E] hover:bg-[#115E59] text-white text-[13px] font-medium rounded-[6px] disabled:opacity-50"
-            >
-              {loading ? "Creating..." : "Create Workspace"}
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => navigate(-1)}
+                className="px-3 py-1.5 border border-[#E4E4E7] text-[13px] text-[#52525B] hover:bg-[#FAFAFA] rounded-[6px]"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={loading || !name.trim()}
+                className="px-4 py-1.5 bg-[#0F766E] hover:bg-[#115E59] text-white text-[13px] font-medium rounded-[6px] disabled:opacity-50"
+              >
+                {loading ? "Creating..." : "Create Workspace"}
+              </button>
+            </div>
           </div>
         </form>
       </div>

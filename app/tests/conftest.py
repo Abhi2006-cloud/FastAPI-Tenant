@@ -214,9 +214,12 @@ async def db_engine():
     with (
         patch("app.core.database.engine", engine),
         patch("app.core.database.async_session_factory", session_factory),
+        patch("app.core.database.worker_engine", engine),
+        patch("app.core.database.worker_session_factory", session_factory),
         patch("app.jobs.search_tasks.async_session_factory", session_factory),
         patch("app.jobs.email_tasks.async_session_factory", session_factory),
         patch("app.jobs.tasks.async_session_factory", session_factory),
+        patch("app.infrastructure.search.service.async_session_factory", session_factory),
     ):
         yield engine
     await engine.dispose()

@@ -138,7 +138,9 @@ async def test_search_client_connection_success():
     with (
         patch.object(client, "is_configured", return_value=True),
         patch.object(client, "get_client", return_value=mock_http),
+        patch("app.infrastructure.search.client.get_settings") as mock_settings,
     ):
+        mock_settings.return_value.is_search_enabled = True
         connected = await client.initialize()
         assert connected is True
         assert client.enabled is True
@@ -157,7 +159,9 @@ async def test_search_client_connection_failure():
     with (
         patch.object(client, "is_configured", return_value=True),
         patch.object(client, "get_client", return_value=mock_http),
+        patch("app.infrastructure.search.client.get_settings") as mock_settings,
     ):
+        mock_settings.return_value.is_search_enabled = True
         connected = await client.initialize()
         assert connected is False
         assert client.enabled is False

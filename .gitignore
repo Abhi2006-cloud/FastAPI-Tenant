@@ -41,8 +41,5 @@ uploads/
 *.swo
 *~
 
-# Streamlit (frontend)
-.streamlit/
-
 # Logs
 *.log

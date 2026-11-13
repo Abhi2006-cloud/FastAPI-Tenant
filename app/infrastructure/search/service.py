@@ -4,7 +4,7 @@ from typing import Any, Dict, List, Optional
 from uuid import UUID
 
 from app.core.cache import CacheService, CacheTTL
-from app.core.database import async_session_factory
+from app.core.database import worker_session_factory as async_session_factory
 from app.infrastructure.search.client import search_client, MeilisearchUnavailableException
 from app.infrastructure.search.repository import SearchRepository
 from app.modules.search.models import SearchIndexFailure

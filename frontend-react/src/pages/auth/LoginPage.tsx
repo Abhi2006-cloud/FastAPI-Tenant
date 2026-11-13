@@ -27,6 +27,11 @@ export const LoginPage: React.FC = () => {
     setLoading(true);
     try {
       await login(email, password);
+      const pendingInvite = sessionStorage.getItem("pending_invite_token");
+      if (pendingInvite) {
+        navigate(`/invitations?token=${encodeURIComponent(pendingInvite)}`);
+        return;
+      }
       // Fetch organizations and land on first org
       const orgsRes = await apiClient.get<OrganizationResponse[]>("/organizations/my");
       if (orgsRes.data.length > 0) {

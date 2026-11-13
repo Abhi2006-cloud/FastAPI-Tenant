@@ -19,7 +19,7 @@ Multi-tenant B2B SaaS platforms require strict data isolation, role-based access
 - **Enterprise Session Security**: Dual-token authentication (short-lived JWT access tokens and long-lived rotating refresh tokens stored as SHA-256 digests in `user_sessions`), device detection from User-Agent strings, replay attack detection with instant session revocation, and active session limits.
 - **Dual Asynchronous Engine**: FastAPI handles asynchronous HTTP I/O (`asyncio` / `asyncpg`), while an RQ-based worker daemon backed by Redis handles decoupled tasks (audit logging, search indexing, and multi-mode email dispatch).
 - **Graceful Search Degradation & Circuit Breaking**: Meilisearch Cloud integration with an in-memory circuit breaker and database fallback table (`search_index_failures`) ensuring the platform remains fully functional when search is offline.
-- **Dual Frontends**: A modern React 19 + TypeScript + Vite Single Page Application (SPA) in `frontend-react/` alongside an interactive administrative and debugging UI in Streamlit (`frontend/`).
+- **Modern Frontend SPA**: A production-grade React 19 + TypeScript + Vite Single Page Application (SPA) in `frontend-react/` with Tailwind CSS and TanStack Query.
 
 ### 1.2 Target Users
 - **Workspace Owners**: Create organizations, manage membership, promote administrators, revoke members, and transfer tenant ownership.
@@ -59,7 +59,6 @@ Multi-tenant B2B SaaS platforms require strict data isolation, role-based access
 | **Frontend Styling & UI** | Tailwind CSS / Lucide / Framer Motion | `@tailwindcss/vite 4.3.3`, `lucide-react 1.28.0`, `framer-motion 12.43.0` | Utility-first modern UI components and transitions |
 | **Frontend State & Queries** | TanStack React Query / Axios | `@tanstack/react-query 5.101.4`, `axios 1.19.0` | Client-side caching, mutation management, and HTTP client |
 | **Frontend Forms & i18n** | React Hook Form / Zod / i18next | `react-hook-form 7.84.0`, `zod 3.25.76`, `i18next 26.3.6` | Client-side validation schemas and multi-language support |
-| **Admin Frontend (Python)** | Streamlit / Pandas / Requests | `streamlit>=1.28.0`, `pandas>=2.0.0`, `requests>=2.31.0` | Internal dashboard and debugging UI |
 
 ---
 
@@ -204,13 +203,6 @@ FastAPI-Tenant/
 │       └── files.py                  # Filename sanitization, extension validation, and tenant path creation
 ├── docs/                             # Architecture and operational documentation
 │   └── deployment/                   # Deployment guides and audit reports
-├── frontend/                         # Streamlit Admin & Debugging Frontend
-│   ├── app.py                        # Streamlit application entry point
-│   ├── requirements.txt              # Dependencies: streamlit, requests, pandas
-│   ├── api/                          # HTTP client wrappers calling FastAPI endpoints
-│   ├── components/                   # UI components (sidebar navigation, auth guard)
-│   ├── pages/                        # Multi-page UI views (Dashboard, Files, Audit, Search, etc.)
-│   └── utils/                        # Frontend session state helpers and constants
 ├── frontend-react/                   # Production React 19 SPA
 │   ├── package.json                  # Node dependencies and scripts
 │   ├── vite.config.ts                # Vite build and development configuration
@@ -258,7 +250,6 @@ The backend follows a **Modular Layered Monolith** architecture with strict sepa
 graph TD
     subgraph Clients
         ReactSPA["React 19 SPA (frontend-react)"]
-        StreamlitUI["Streamlit Admin UI (frontend)"]
         ThirdParty["API Clients / Curl / Postman"]
     end
 
@@ -1261,15 +1252,6 @@ npm run dev
 # The React SPA will be accessible at http://localhost:5173
 ```
 
-### 17.5 Streamlit Admin Frontend Setup (`frontend/`)
-In a separate terminal window:
-```bash
-source .venv/bin/activate
-pip install -r frontend/requirements.txt
-streamlit run frontend/app.py
-# The Streamlit admin portal will open at http://localhost:8501
-```
-
 ---
 
 ## 18. Data Flow Walkthroughs
@@ -1503,7 +1485,7 @@ Here are 10 senior-level talking points highlighting the technical complexity an
 7. **Role-Based Access Control Guardrails**: Implemented fine-grained RBAC (`owner`, `admin`, `member`) featuring self-removal protection, immutable owner records, and transactional two-phase ownership transfer.
 8. **Cloud & Local Storage Abstraction**: Built a decoupled storage service supporting local tenant directory isolation (`uploads/<org_id>/`) and S3-compatible cloud backends (Cloudflare R2 / AWS S3) with filename sanitization and MIME whitelisting.
 9. **Rigorous Quality Engineering**: Authored an automated test suite of 146 unit, integration, and security tests executing against in-memory SQLite (`aiosqlite`) and mock Redis, achieving 100% test pass rate in under 60 seconds.
-10. **Modern Dual-Stack UI Ecosystem**: Deployed a production-grade React 19 + TypeScript + Vite SPA utilizing TanStack Query and Tailwind CSS alongside an internal Streamlit administrative portal for queue inspection and health monitoring.
+10. **Modern Production UI Ecosystem**: Deployed a production-grade React 19 + TypeScript + Vite SPA utilizing TanStack Query and Tailwind CSS for tenant workspaces, file management, and audit logging.
 
 ---
 

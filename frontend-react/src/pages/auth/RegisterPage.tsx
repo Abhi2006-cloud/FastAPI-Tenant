@@ -29,6 +29,11 @@ export const RegisterPage: React.FC = () => {
     setLoading(true);
     try {
       await register(email, password);
+      const pendingInvite = sessionStorage.getItem("pending_invite_token");
+      if (pendingInvite) {
+        navigate(`/invitations?token=${encodeURIComponent(pendingInvite)}`);
+        return;
+      }
       navigate("/o/new");
     } catch (err: unknown) {
       const axiosErr = err as { response?: { data?: { detail?: string | { code?: string; retry_after?: number } } } };

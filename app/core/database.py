@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import (
     create_async_engine,
 )
 from sqlalchemy.orm import DeclarativeBase
+from sqlalchemy.pool import NullPool
 
 from app.core.config import get_settings
 
@@ -118,6 +119,29 @@ engine = create_async_engine(
 
 async_session_factory = async_sessionmaker(
     engine,
+    class_=AsyncSession,
+    expire_on_commit=False,
+    autoflush=False,
+)
+
+# Dedicated NullPool engine for background worker tasks (RQ, threads, asyncio.run).
+# Asyncpg connection objects are strictly bound to a single asyncio event loop.
+# Using NullPool ensures background tasks running in separate or ephemeral event loops
+# (such as an embedded worker thread or per-task asyncio.run) open a dedicated connection
+# on that loop and close it immediately upon exit without returning it to the main web pool.
+_worker_engine_kwargs = dict(_engine_kwargs)
+_worker_engine_kwargs.pop("pool_size", None)
+_worker_engine_kwargs.pop("max_overflow", None)
+if _worker_engine_kwargs.get("poolclass") is None:
+    _worker_engine_kwargs["poolclass"] = NullPool
+
+worker_engine = create_async_engine(
+    _db_url,
+    **_worker_engine_kwargs,
+)
+
+worker_session_factory = async_sessionmaker(
+    worker_engine,
     class_=AsyncSession,
     expire_on_commit=False,
     autoflush=False,

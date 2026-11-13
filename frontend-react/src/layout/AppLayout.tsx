@@ -134,6 +134,13 @@ export const AppLayout: React.FC = () => {
                   <Plus className="w-3.5 h-3.5" />
                   <span>Create Workspace</span>
                 </DropdownMenu.Item>
+                <DropdownMenu.Item
+                  onClick={() => navigate("/invitations")}
+                  className="flex items-center gap-2 px-2.5 py-1.5 rounded-[4px] cursor-pointer text-[#52525B] hover:bg-[#F4F4F5] focus:bg-[#F4F4F5] focus:outline-none"
+                >
+                  <KeyRound className="w-3.5 h-3.5 text-[#0F766E]" />
+                  <span>Join with Invite Token</span>
+                </DropdownMenu.Item>
               </DropdownMenu.Content>
             </DropdownMenu.Portal>
           </DropdownMenu.Root>

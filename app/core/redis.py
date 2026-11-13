@@ -53,7 +53,7 @@ class RedisClient:
             "health_check_interval": 30,
         }
         if url.startswith("rediss://"):
-            kwargs["ssl_cert_reqs"] = ssl.CERT_REQUIRED
+            kwargs["ssl_cert_reqs"] = "required"
         return kwargs
 
     @classmethod

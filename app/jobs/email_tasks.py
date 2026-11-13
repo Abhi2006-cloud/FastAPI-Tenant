@@ -9,7 +9,7 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
-from app.core.database import async_session_factory
+from app.core.database import worker_session_factory as async_session_factory
 from app.infrastructure.email.client import get_email_provider
 from app.infrastructure.email.renderer import email_renderer
 from app.modules.email.models import EmailStatus

@@ -12,7 +12,7 @@ from pathlib import Path
 from uuid import UUID
 
 from app.core.config import get_settings
-from app.core.database import async_session_factory
+from app.core.database import worker_session_factory as async_session_factory
 from app.jobs.async_runner import run_async
 
 # Ensure all SQLAlchemy ORM models are registered in worker process

@@ -2,7 +2,7 @@ import logging
 from uuid import UUID
 from rq import get_current_job
 
-from app.core.database import async_session_factory
+from app.core.database import worker_session_factory as async_session_factory
 from app.jobs.async_runner import run_async
 from app.infrastructure.search.service import SearchService
 from app.infrastructure.search.document_mapper import (
