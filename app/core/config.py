@@ -189,10 +189,17 @@ class Settings(BaseSettings):
 
     @property
     def sync_database_url(self) -> str:
-        """Alembic migrations need a sync driver URL (no +asyncpg)."""
-        if self.alembic_database_url:
-            return self.alembic_database_url
-        return self.database_url.replace("+asyncpg", "")
+        """Alembic migrations need a synchronous driver URL (psycopg/psycopg2)."""
+        raw = self.alembic_database_url or self.database_url
+        if not raw:
+            return ""
+        if "+asyncpg" in raw:
+            raw = raw.replace("+asyncpg", "+psycopg2")
+        elif raw.startswith("postgres://"):
+            raw = "postgresql+psycopg2://" + raw[len("postgres://") :]
+        elif raw.startswith("postgresql://") and "+psycopg" not in raw:
+            raw = "postgresql+psycopg2://" + raw[len("postgresql://") :]
+        return raw
 
     @property
     def max_upload_size_bytes(self) -> int:

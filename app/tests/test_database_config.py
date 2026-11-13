@@ -119,3 +119,21 @@ def test_validate_production_settings_succeeds_valid():
         database_url="postgresql+asyncpg://u:p@remote-host:5432/db",
     )
     s.validate_production_settings()  # Should not raise
+
+
+def test_sync_database_url_normalization():
+    from app.core.config import Settings
+    s1 = Settings(database_url="postgresql+asyncpg://u:p@host:5432/db", alembic_database_url=None)
+    assert s1.sync_database_url == "postgresql+psycopg2://u:p@host:5432/db"
+
+    s2 = Settings(database_url="postgresql://u:p@host:5432/db", alembic_database_url=None)
+    assert s2.sync_database_url == "postgresql+psycopg2://u:p@host:5432/db"
+
+    s3 = Settings(database_url="postgres://u:p@host:5432/db", alembic_database_url=None)
+    assert s3.sync_database_url == "postgresql+psycopg2://u:p@host:5432/db"
+
+    s4 = Settings(database_url="sqlite+aiosqlite:///:memory:", alembic_database_url=None)
+    assert s4.sync_database_url == "sqlite+aiosqlite:///:memory:"
+
+    s5 = Settings(database_url="postgresql+asyncpg://u:p@host:5432/db", alembic_database_url="postgresql+psycopg://u:p@host:5432/db")
+    assert s5.sync_database_url == "postgresql+psycopg://u:p@host:5432/db"
