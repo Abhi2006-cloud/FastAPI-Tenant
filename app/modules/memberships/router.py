@@ -138,6 +138,12 @@ async def remove_member(
     response_model=OwnershipTransferResponse,
     status_code=status.HTTP_200_OK,
 )
+@router.post(
+    "/{org_id}/transfer_ownership",
+    response_model=OwnershipTransferResponse,
+    status_code=status.HTTP_200_OK,
+    include_in_schema=False,
+)
 async def transfer_ownership(
     org_id: UUID,
     data: OwnershipTransferRequest,
@@ -165,6 +171,7 @@ async def transfer_ownership(
         requester_user_id=current_user.id,
         organization_id=org_id,
         new_owner_membership_id=data.new_owner_membership_id,
+        new_owner_user_id=data.new_owner_user_id,
     )
     
     return OwnershipTransferResponse(message="ownership transferred")

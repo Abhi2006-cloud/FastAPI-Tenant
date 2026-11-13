@@ -77,7 +77,8 @@ export const MembersPage: React.FC = () => {
   const handleTransferOwnership = async () => {
     if (!memberToTransfer || !orgId) return;
     try {
-      await apiClient.post(`/organizations/${orgId}/transfer_ownership`, {
+      await apiClient.post(`/organizations/${orgId}/transfer-ownership`, {
+        new_owner_membership_id: memberToTransfer.membership_id,
         new_owner_user_id: memberToTransfer.user_id,
       });
       showToast(`Ownership transferred to ${memberToTransfer.email}.`, "success");

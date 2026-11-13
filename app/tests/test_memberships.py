@@ -525,6 +525,31 @@ async def test_transfer_ownership_success(client: AsyncClient) -> None:
 
 
 @pytest.mark.asyncio
+async def test_transfer_ownership_via_alias_and_user_id(client: AsyncClient) -> None:
+    """Test ownership transfer using alias path /transfer_ownership and new_owner_user_id."""
+    owner_token = await _register_and_token(client, "owner_alias@example.com")
+    org_id = await _create_org_and_get_id(client, owner_token)
+
+    invite_token = await _add_member_to_org(client, org_id, "member_alias@example.com", owner_token)
+    member_token = await _register_and_token(client, "member_alias@example.com")
+    await _accept_invitation(client, member_token, invite_token)
+
+    members_response = await client.get(
+        f"/organizations/{org_id}/members",
+        headers={"Authorization": f"Bearer {owner_token}"},
+    )
+    member_membership = [m for m in members_response.json() if m["email"] == "member_alias@example.com"][0]
+
+    response = await client.post(
+        f"/organizations/{org_id}/transfer_ownership",
+        json={"new_owner_user_id": member_membership["user_id"]},
+        headers={"Authorization": f"Bearer {owner_token}"},
+    )
+    assert response.status_code == 200
+    assert response.json()["message"] == "ownership transferred"
+
+
+@pytest.mark.asyncio
 async def test_transfer_ownership_non_owner_forbidden(client: AsyncClient) -> None:
     """Test that non-owner cannot transfer ownership."""
     owner_token = await _register_and_token(client, "owner@example.com")

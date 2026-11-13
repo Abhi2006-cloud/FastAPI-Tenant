@@ -3,7 +3,7 @@
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.modules.memberships.models import MembershipRole
 
@@ -51,8 +51,15 @@ class MemberRemoveResponse(BaseModel):
 
 class OwnershipTransferRequest(BaseModel):
     """Request to transfer organization ownership."""
-    
-    new_owner_membership_id: UUID = Field(..., description="Membership ID of the new owner")
+
+    new_owner_membership_id: UUID | None = Field(default=None, description="Membership ID of the new owner")
+    new_owner_user_id: UUID | None = Field(default=None, description="User ID of the new owner")
+
+    @model_validator(mode="after")
+    def validate_identifier(self) -> "OwnershipTransferRequest":
+        if not self.new_owner_membership_id and not self.new_owner_user_id:
+            raise ValueError("Either new_owner_membership_id or new_owner_user_id must be provided")
+        return self
 
 
 class OwnershipTransferResponse(BaseModel):

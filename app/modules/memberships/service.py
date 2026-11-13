@@ -269,7 +269,8 @@ class MembershipService:
         self,
         requester_user_id: UUID,
         organization_id: UUID,
-        new_owner_membership_id: UUID,
+        new_owner_membership_id: UUID | None = None,
+        new_owner_user_id: UUID | None = None,
     ) -> None:
         """
         Transfer organization ownership to another member.
@@ -287,7 +288,8 @@ class MembershipService:
         Args:
             requester_user_id: User requesting transfer
             organization_id: Organization context
-            new_owner_membership_id: Membership ID of new owner
+            new_owner_membership_id: Membership ID of new owner (optional if new_owner_user_id provided)
+            new_owner_user_id: User ID of new owner (optional if new_owner_membership_id provided)
             
         Raises:
             ForbiddenError: If requester lacks permissions or invalid target
@@ -303,8 +305,13 @@ class MembershipService:
         if current_owner_membership is None:
             raise ForbiddenError("You are not the owner of this organization")
         
-        # Get target membership
-        target_membership = await self.repo.get_by_id(new_owner_membership_id)
+        # Get target membership by membership_id or user_id
+        target_membership = None
+        if new_owner_membership_id:
+            target_membership = await self.repo.get_by_id(new_owner_membership_id)
+        elif new_owner_user_id:
+            target_membership = await self.repo.get_by_user_and_org(new_owner_user_id, organization_id)
+
         if target_membership is None:
             raise NotFoundError("Target membership not found")
         
